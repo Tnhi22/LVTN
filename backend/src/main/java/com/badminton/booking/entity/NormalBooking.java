@@ -40,6 +40,11 @@ public class NormalBooking {
     private LocalDateTime checkedInAt;
 
     private Long checkedInBy;
+    private String complaintStatus = "NONE";
+    private String complaintReason;
+    private LocalDateTime complainedAt;
+    private LocalDateTime complaintResolvedAt;
+    private Long complaintResolvedBy;
 
     public NormalBooking() {
     }
@@ -123,5 +128,45 @@ public class NormalBooking {
 
     public void setCheckedInBy(Long checkedInBy) {
         this.checkedInBy = checkedInBy;
+    }
+
+    public String getComplaintStatus() {
+    return complaintStatus;
+    }
+
+    public void setComplaintStatus(String complaintStatus) {
+        this.complaintStatus = complaintStatus;
+    }
+
+    public String getComplaintReason() {
+        return complaintReason;
+    }
+
+    public void setComplaintReason(String complaintReason) {
+        this.complaintReason = complaintReason;
+    }
+
+    public LocalDateTime getComplainedAt() {
+        return complainedAt;
+    }
+
+    public void setComplainedAt(LocalDateTime complainedAt) {
+        this.complainedAt = complainedAt;
+    }
+
+    public LocalDateTime getComplaintResolvedAt() {
+        return complaintResolvedAt;
+    }
+
+    public void setComplaintResolvedAt(LocalDateTime complaintResolvedAt) {
+        this.complaintResolvedAt = complaintResolvedAt;
+    }
+
+    public Long getComplaintResolvedBy() {
+        return complaintResolvedBy;
+    }
+
+    public void setComplaintResolvedBy(Long complaintResolvedBy) {
+        this.complaintResolvedBy = complaintResolvedBy;
     }
 }

@@ -21,7 +21,52 @@ public class UserController {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
     }
+    @PostMapping("/admin")
+    public User createAdmin(@RequestBody RegisterRequest request) {
 
+    if (userRepository.existsByEmail(request.getEmail())) {
+        throw new RuntimeException("Email đã tồn tại");
+    }
+
+    if (userRepository.existsByPhone(request.getPhone())) {
+        throw new RuntimeException("Số điện thoại đã tồn tại");
+    }
+
+    User admin = new User();
+
+    admin.setFullName(request.getFullName());
+    admin.setPhone(request.getPhone());
+    admin.setEmail(request.getEmail());
+    admin.setPassword(passwordEncoder.encode(request.getPassword()));
+
+    admin.setRole("ADMIN");
+    admin.setStatus("ACTIVE");
+
+    return userRepository.save(admin);
+    }
+    @PostMapping("/staff")
+    public User createStaff(@RequestBody RegisterRequest request) {
+
+    if (userRepository.existsByEmail(request.getEmail())) {
+        throw new RuntimeException("Email đã tồn tại");
+    }
+
+    if (userRepository.existsByPhone(request.getPhone())) {
+        throw new RuntimeException("Số điện thoại đã tồn tại");
+    }
+
+    User staff = new User();
+
+    staff.setFullName(request.getFullName());
+    staff.setPhone(request.getPhone());
+    staff.setEmail(request.getEmail());
+    staff.setPassword(passwordEncoder.encode(request.getPassword()));
+
+    staff.setRole("STAFF");
+    staff.setStatus("ACTIVE");
+
+    return userRepository.save(staff);
+    }
     @PostMapping("/register")
     public User register(@RequestBody RegisterRequest request) {
 
@@ -50,7 +95,7 @@ public class UserController {
     }
 
     @PostMapping("/login")
-public LoginResponse login(@RequestBody LoginRequest request) {
+    public LoginResponse login(@RequestBody LoginRequest request) {
 
     User user = userRepository.findByEmail(request.getEmail())
             .orElseThrow(() -> new RuntimeException("Email hoặc mật khẩu không đúng"));
@@ -70,5 +115,5 @@ public LoginResponse login(@RequestBody LoginRequest request) {
             user.getPhone(),
             user.getRole()
     );
-}
+    }
 }

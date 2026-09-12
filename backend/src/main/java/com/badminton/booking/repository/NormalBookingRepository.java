@@ -3,8 +3,8 @@ package com.badminton.booking.repository;
 import com.badminton.booking.entity.NormalBooking;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.LocalDate;
 import java.util.List;
+import java.time.LocalDate;
 
 public interface NormalBookingRepository extends JpaRepository<NormalBooking, Long> {
 
@@ -12,5 +12,11 @@ public interface NormalBookingRepository extends JpaRepository<NormalBooking, Lo
             Long courtId,
             LocalDate bookingDate,
             String status
+    );
+    long countByUserIdAndBookingDateBetweenAndStatusNot(
+        Long userId,
+        LocalDate startDate,
+        LocalDate endDate,
+        String status
     );
 }
