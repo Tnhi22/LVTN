@@ -35,6 +35,17 @@ public class DailyVisitorSession {
     @Column(nullable = false)
     private String status = "OPEN";
 
+    @Column(name = "cancel_reason")
+    private String cancelReason;
+
+    public String getCancelReason() {
+    return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
+    }
+
     public DailyVisitorSession() {
     }
 

@@ -7,6 +7,7 @@ import com.badminton.booking.repository.DailyVisitorSessionRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +31,8 @@ public class DailyVisitorSessionService {
 
         List<DailyVisitorSession> sessions = new ArrayList<>();
 
+        LocalDateTime now = LocalDateTime.now();
+
         for (DailyVisitorSchedule schedule : schedules) {
 
             boolean exists =
@@ -50,7 +53,17 @@ public class DailyVisitorSessionService {
             session.setEndTime(schedule.getEndTime());
             session.setMinParticipants(schedule.getMinParticipants());
             session.setMaxParticipants(schedule.getMaxParticipants());
-            session.setStatus("OPEN");
+
+            LocalDateTime sessionEnd = LocalDateTime.of(
+                    date,
+                    schedule.getEndTime()
+            );
+
+            if (!sessionEnd.isAfter(now)) {
+                session.setStatus("CLOSED");
+            } else {
+                session.setStatus("OPEN");
+            }
 
             sessions.add(session);
         }

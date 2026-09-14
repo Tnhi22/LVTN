@@ -15,8 +15,12 @@ public class NormalBooking {
     private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id")
     private User user;
+
+    @ManyToOne
+    @JoinColumn(name = "visitor_id")
+    private Visitor visitor;
 
     @ManyToOne
     @JoinColumn(name = "court_id", nullable = false)
@@ -40,6 +44,7 @@ public class NormalBooking {
     private LocalDateTime checkedInAt;
 
     private Long checkedInBy;
+
     private String complaintStatus = "NONE";
     private String complaintReason;
     private LocalDateTime complainedAt;
@@ -68,6 +73,14 @@ public class NormalBooking {
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public Visitor getVisitor() {
+        return visitor;
+    }
+
+    public void setVisitor(Visitor visitor) {
+        this.visitor = visitor;
     }
 
     public Court getCourt() {
@@ -131,7 +144,7 @@ public class NormalBooking {
     }
 
     public String getComplaintStatus() {
-    return complaintStatus;
+        return complaintStatus;
     }
 
     public void setComplaintStatus(String complaintStatus) {
