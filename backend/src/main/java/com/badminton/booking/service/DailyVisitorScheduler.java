@@ -1,13 +1,18 @@
 package com.badminton.booking.service;
 
+import com.badminton.booking.entity.DailyVisitorParticipant;
 import com.badminton.booking.entity.DailyVisitorSession;
+import com.badminton.booking.entity.User;
+import com.badminton.booking.entity.Visitor;
+
 import com.badminton.booking.repository.DailyVisitorParticipantRepository;
 import com.badminton.booking.repository.DailyVisitorSessionRepository;
+import com.badminton.booking.repository.UserRepository;
+import com.badminton.booking.repository.VisitorRepository;
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import com.badminton.booking.entity.DailyVisitorParticipant;
-import com.badminton.booking.entity.Visitor;
-import com.badminton.booking.repository.VisitorRepository;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -17,149 +22,297 @@ public class DailyVisitorScheduler {
     private final DailyVisitorSessionRepository sessionRepository;
     private final DailyVisitorParticipantRepository participantRepository;
     private final VisitorRepository visitorRepository;
+    private final UserRepository userRepository;
 
     public DailyVisitorScheduler(
             DailyVisitorSessionRepository sessionRepository,
             DailyVisitorParticipantRepository participantRepository,
-            VisitorRepository visitorRepository) {
+            VisitorRepository visitorRepository,
+            UserRepository userRepository) {
 
         this.sessionRepository = sessionRepository;
         this.participantRepository = participantRepository;
         this.visitorRepository = visitorRepository;
+        this.userRepository = userRepository;
     }
 
+
+    // =========================================================
+    // T + 30 PHÚT
+    //
+    // 1. Người vẫn CONFIRMED -> NO_SHOW
+    // 2. CUSTOMER NO_SHOW -> WARNING / SUSPENDED
+    // 3. Khách vãng lai NO_SHOW -> BLOCKED theo SĐT
+    // 4. Đếm tổng slot CHECKED_IN
+    // 5. Nếu CHECKED_IN < minParticipants -> CANCELLED
+    // =========================================================
     @Scheduled(fixedRate = 60000)
-public void checkMinimumCheckedInAfterStart() {
+    public void checkMinimumCheckedInAfterStart() {
 
-    LocalDateTime now = LocalDateTime.now();
-    List<DailyVisitorSession> sessions =
-            sessionRepository.findAll();
+        LocalDateTime now = LocalDateTime.now();
 
-    for (DailyVisitorSession session : sessions) {
+        List<DailyVisitorSession> sessions =
+                sessionRepository.findAll();
 
-        // Session đã bị hủy ở T-30 thì không xử lý lại.
-    if (!"OPEN".equals(session.getStatus())
-            && !"FULL".equals(session.getStatus())) {
-        continue;
-    }
+        for (DailyVisitorSession session : sessions) {
 
-        LocalDateTime startTime = LocalDateTime.of(
-                session.getSessionDate(),
-                session.getStartTime()
-        );
+            // Chỉ xử lý session còn hoạt động
+            if (!"OPEN".equals(session.getStatus())
+                    && !"FULL".equals(session.getStatus())) {
 
-        LocalDateTime checkInDeadline =
-                startTime.plusMinutes(30);
-
-        // Chưa đến T+30.
-        if (now.isBefore(checkInDeadline)) {
-            continue;
-        }
-
-        Long registeredSlots =
-                participantRepository.getUsedSlots(
-                        session.getId()
-                );
-
-        Long checkedInSlots =
-                participantRepository.getCheckedInSlots(
-                        session.getId()
-                );
-
-        if (registeredSlots == null) {
-            registeredSlots = 0L;
-        }
-
-        if (checkedInSlots == null) {
-            checkedInSlots = 0L;
-        }
-
-        // Trường hợp ứng dụng không chạy ở mốc T-30:
-        // vẫn ưu tiên xác định thiếu người đăng ký.
-        if (registeredSlots < session.getMinParticipants()) {
-
-            session.setStatus("CANCELLED");
-            session.setCancelReason(
-                    "NOT_ENOUGH_REGISTERED_PLAYERS"
-            );
-
-            sessionRepository.save(session);
-
-            System.out.println(
-                    "Daily Visitor session "
-                            + session.getId()
-                            + " bị hủy vì chỉ có "
-                            + registeredSlots + "/"
-                            + session.getMinParticipants()
-                            + " người đăng ký."
-            );
-
-            continue;
-        }
-
-        // Đã đủ người đăng ký nhưng không đủ người thực tế check-in.
-        if (checkedInSlots < session.getMinParticipants()) {
-
-        session.setStatus("CANCELLED");
-        List<DailyVisitorParticipant> participants =
-        participantRepository.findBySessionId(session.getId());
-
-        for (DailyVisitorParticipant participant : participants) {
-
-            Integer registered = participant.getSlotCount();
-            Integer checkedIn = participant.getCheckedInSlots();
-
-            if (registered == null) {
-                registered = 0;
+                continue;
             }
 
-            if (checkedIn == null) {
-                checkedIn = 0;
+            LocalDateTime startTime =
+                    LocalDateTime.of(
+                            session.getSessionDate(),
+                            session.getStartTime()
+                    );
+
+            LocalDateTime checkInDeadline =
+                    startTime.plusMinutes(30);
+
+            // Chưa tới T+30 thì chưa xử lý NO_SHOW
+            if (now.isBefore(checkInDeadline)) {
+                continue;
             }
 
-            // Chỉ chặn nhóm hoàn toàn không đến.
-            if (registered > 0 && checkedIn == 0) {
 
+            // =================================================
+            // Lấy toàn bộ participant của session
+            // =================================================
+            List<DailyVisitorParticipant> participants =
+                    participantRepository.findBySessionId(
+                            session.getId()
+                    );
+
+
+            // =================================================
+            // Tổng số slot đã đăng ký
+            // =================================================
+            long registeredSlots = 0L;
+
+            for (DailyVisitorParticipant participant : participants) {
+
+                Integer slotCount =
+                        participant.getSlotCount();
+
+                if (slotCount != null) {
+                    registeredSlots += slotCount;
+                }
+            }
+
+
+            // =================================================
+            // Nếu ứng dụng bị tắt ở thời điểm T-30
+            // và session vốn chưa đủ người đăng ký
+            // =================================================
+            if (registeredSlots
+                    < session.getMinParticipants()) {
+
+                session.setStatus("CANCELLED");
+
+                session.setCancelReason(
+                        "NOT_ENOUGH_REGISTERED_PLAYERS"
+                );
+
+                sessionRepository.save(session);
+
+                System.out.println(
+                        "Daily Visitor session "
+                                + session.getId()
+                                + " CANCELLED: "
+                                + registeredSlots
+                                + "/"
+                                + session.getMinParticipants()
+                                + " registered."
+                );
+
+                continue;
+            }
+
+
+            // =================================================
+            // XỬ LÝ NO_SHOW
+            // =================================================
+            for (DailyVisitorParticipant participant : participants) {
+
+                // Ai đã CHECKED_IN thì không xử lý
+                if (!"CONFIRMED".equals(
+                        participant.getStatus())) {
+
+                    continue;
+                }
+
+                // Qua T+30 mà vẫn CONFIRMED
+                // => NO_SHOW
                 participant.setStatus("NO_SHOW");
+
                 participantRepository.save(participant);
 
-                String phone = participant.getRepresentativePhone();
 
-                if (phone != null && !phone.isBlank()) {
-                    String normalizedPhone = phone.trim();
+                // =============================================
+                // CASE 1:
+                // CUSTOMER có tài khoản
+                // =============================================
+                if (participant.getUser() != null) {
 
-                    Visitor visitor = visitorRepository
-                            .findByPhone(normalizedPhone)
-                            .orElseGet(() -> {
-                                Visitor newVisitor = new Visitor();
-                                newVisitor.setFullName(
-                                        participant.getParticipantName()
-                                );
-                                newVisitor.setPhone(normalizedPhone);
-                                newVisitor.setStatus("ACTIVE");
-                                return visitorRepository.save(newVisitor);
-                            });
+                    User user =
+                            participant.getUser();
 
-                    visitor.setStatus("BLOCKED");
-                    visitorRepository.save(visitor);
+                    if ("ACTIVE".equals(user.getStatus())) {
+
+                        user.setStatus("WARNING");
+
+                    } else if ("WARNING".equals(
+                            user.getStatus())) {
+
+                        user.setStatus("SUSPENDED");
+                    }
+
+                    userRepository.save(user);
+
+                    continue;
                 }
+
+
+                // =============================================
+                // CASE 2:
+                // Khách vãng lai
+                // =============================================
+                String phone =
+                        participant.getRepresentativePhone();
+
+                if (phone == null
+                        || phone.isBlank()) {
+
+                    continue;
+                }
+
+                String normalizedPhone =
+                        phone.trim();
+
+
+                Visitor visitor =
+                        visitorRepository
+                                .findByPhone(normalizedPhone)
+                                .orElseGet(() -> {
+
+                                    Visitor newVisitor =
+                                            new Visitor();
+
+                                    String participantName =
+                                            participant
+                                                    .getParticipantName();
+
+                                    if (participantName == null
+                                            || participantName
+                                            .isBlank()) {
+
+                                        participantName =
+                                                "Khách vãng lai "
+                                                        + normalizedPhone;
+                                    }
+
+                                    newVisitor.setFullName(
+                                            participantName
+                                    );
+
+                                    newVisitor.setPhone(
+                                            normalizedPhone
+                                    );
+
+                                    newVisitor.setStatus(
+                                            "ACTIVE"
+                                    );
+
+                                    return visitorRepository
+                                            .save(newVisitor);
+                                });
+
+
+                visitor.setStatus("BLOCKED");
+
+                visitorRepository.save(visitor);
+            }
+
+
+            // =================================================
+            // ĐẾM SLOT THỰC TẾ ĐÃ CHECK-IN
+            //
+            // Không dùng checked_in_slots.
+            //
+            // Ví dụ:
+            // participant A:
+            // slot_count = 1
+            // CHECKED_IN
+            // => tính 1
+            //
+            // participant B:
+            // slot_count = 3
+            // NO_SHOW
+            // => tính 0
+            // =================================================
+            long checkedInSlots = 0L;
+
+            for (DailyVisitorParticipant participant : participants) {
+
+                if (!"CHECKED_IN".equals(
+                        participant.getStatus())) {
+
+                    continue;
+                }
+
+                Integer slotCount =
+                        participant.getSlotCount();
+
+                if (slotCount != null) {
+                    checkedInSlots += slotCount;
                 }
             }
-            session.setCancelReason(
-                    "NOT_ENOUGH_CHECKED_IN_PLAYERS"
-            );
 
-            sessionRepository.save(session);
 
+            // =================================================
+            // Không đủ người thực tế tới sân
+            // =================================================
+            if (checkedInSlots
+                    < session.getMinParticipants()) {
+
+                session.setStatus("CANCELLED");
+
+                session.setCancelReason(
+                        "NOT_ENOUGH_CHECKED_IN_PLAYERS"
+                );
+
+                sessionRepository.save(session);
+
+                System.out.println(
+                        "Daily Visitor session "
+                                + session.getId()
+                                + " CANCELLED: "
+                                + checkedInSlots
+                                + "/"
+                                + session.getMinParticipants()
+                                + " checked-in."
+                );
+
+                continue;
+            }
+
+
+            // =================================================
+            // Nếu đủ người check-in
+            // Không hủy session
+            // =================================================
             System.out.println(
                     "Daily Visitor session "
                             + session.getId()
-                            + " bị hủy vì chỉ có "
-                            + checkedInSlots + "/"
+                            + " đủ người: "
+                            + checkedInSlots
+                            + "/"
                             + session.getMinParticipants()
-                            + " người check-in."
+                            + " checked-in."
             );
         }
     }
-}
 }

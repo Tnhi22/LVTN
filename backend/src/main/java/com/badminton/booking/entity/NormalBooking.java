@@ -44,6 +44,14 @@ public class NormalBooking {
     private LocalDateTime checkedInAt;
 
     private Long checkedInBy;
+    @Column(name = "cancelled_by_staff_id")
+    private Long cancelledByStaffId;
+
+    @Column(name = "cancelled_by_staff_name")
+    private String cancelledByStaffName;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 
     private String complaintStatus = "NONE";
     private String complaintReason;
@@ -181,5 +189,29 @@ public class NormalBooking {
 
     public void setComplaintResolvedBy(Long complaintResolvedBy) {
         this.complaintResolvedBy = complaintResolvedBy;
+    }
+
+        public Long getCancelledByStaffId() {
+        return cancelledByStaffId;
+    }
+
+    public void setCancelledByStaffId(Long cancelledByStaffId) {
+        this.cancelledByStaffId = cancelledByStaffId;
+    }
+
+    public String getCancelledByStaffName() {
+        return cancelledByStaffName;
+    }
+
+    public void setCancelledByStaffName(String cancelledByStaffName) {
+        this.cancelledByStaffName = cancelledByStaffName;
+    }
+
+    public LocalDateTime getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public void setCancelledAt(LocalDateTime cancelledAt) {
+        this.cancelledAt = cancelledAt;
     }
 }

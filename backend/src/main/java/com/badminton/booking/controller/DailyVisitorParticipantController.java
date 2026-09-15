@@ -77,4 +77,28 @@ public class DailyVisitorParticipantController {
                 staffId
         );
     }
+
+        // CUSTOMER tự hủy Daily Visitor trên web
+    @DeleteMapping("/{participantId}/cancel")
+    public DailyVisitorParticipant cancelByCustomer(
+            @PathVariable Long participantId,
+            @RequestParam Long userId) {
+
+        return participantService.cancelByCustomer(
+                participantId,
+                userId
+        );
     }
+
+    // STAFF / ADMIN hủy Daily Visitor cho khách tại quầy
+    @DeleteMapping("/{participantId}/cancel-by-staff")
+    public DailyVisitorParticipant cancelWalkInByStaff(
+            @PathVariable Long participantId,
+            @RequestParam Long staffId) {
+
+        return participantService.cancelWalkInByStaff(
+                participantId,
+                staffId
+        );
+    }
+}

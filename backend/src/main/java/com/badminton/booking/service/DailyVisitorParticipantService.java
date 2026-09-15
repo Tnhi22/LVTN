@@ -314,4 +314,224 @@ public DailyVisitorParticipant checkIn(
 
     return participantRepository.save(participant);
 }
+
+
+// =========================================================
+// 4. CUSTOMER tự hủy Daily Visitor
+// Chỉ được hủy trước giờ chơi ít nhất 30 phút
+// =========================================================
+public DailyVisitorParticipant cancelByCustomer(
+        Long participantId,
+        Long userId) {
+
+    DailyVisitorParticipant participant =
+            participantRepository.findById(participantId)
+                    .orElseThrow(() ->
+                            new RuntimeException(
+                                    "Không tìm thấy lượt đăng ký"));
+
+    // Phải là booking của user có tài khoản
+    if (participant.getUser() == null) {
+        throw new RuntimeException(
+                "Khách tại quầy không thể tự hủy trên web");
+    }
+
+    // Chỉ chính chủ mới được hủy
+    if (!participant.getUser().getId().equals(userId)) {
+        throw new RuntimeException(
+                "Bạn không có quyền hủy lượt đăng ký này");
+    }
+
+    // Chỉ CUSTOMER được tự hủy
+    if (!"CUSTOMER".equals(
+            participant.getUser().getRole())) {
+
+        throw new RuntimeException(
+                "Chỉ khách hàng mới có thể tự hủy lượt đăng ký");
+    }
+
+    // Chỉ CONFIRMED mới được hủy
+    if (!"CONFIRMED".equals(
+            participant.getStatus())) {
+
+        if ("CANCELLED".equals(
+                participant.getStatus())) {
+
+            throw new RuntimeException(
+                    "Lượt đăng ký đã được hủy trước đó");
+        }
+
+        if ("CHECKED_IN".equals(
+                participant.getStatus())) {
+
+            throw new RuntimeException(
+                    "Lượt đăng ký đã check-in nên không thể hủy");
+        }
+
+        if ("NO_SHOW".equals(
+                participant.getStatus())) {
+
+            throw new RuntimeException(
+                    "Lượt đăng ký đã bị đánh dấu NO_SHOW");
+        }
+
+        throw new RuntimeException(
+                "Trạng thái hiện tại không cho phép hủy");
+    }
+
+    DailyVisitorSession session =
+            participant.getSession();
+
+    if (session == null) {
+        throw new RuntimeException(
+                "Không tìm thấy lượt chơi");
+    }
+
+    // Session đã bị hủy / đóng thì không xử lý hủy booking nữa
+    if ("CANCELLED".equals(session.getStatus())
+            || "CLOSED".equals(session.getStatus())) {
+
+        throw new RuntimeException(
+                "Lượt chơi đã bị hủy hoặc đã đóng");
+    }
+
+    LocalDateTime now =
+            LocalDateTime.now();
+
+    LocalDateTime sessionStart =
+            LocalDateTime.of(
+                    session.getSessionDate(),
+                    session.getStartTime()
+            );
+
+    LocalDateTime cancelDeadline =
+            sessionStart.minusMinutes(30);
+
+    // Ví dụ chơi 17:00
+    // 16:29 còn hủy được
+    // từ 16:30 trở đi không được hủy
+    if (!now.isBefore(cancelDeadline)) {
+        throw new RuntimeException(
+                "Chỉ được hủy trước giờ chơi ít nhất 30 phút");
+    }
+
+    // Hủy đăng ký
+    participant.setStatus("CANCELLED");
+
+    DailyVisitorParticipant savedParticipant =
+            participantRepository.save(participant);
+
+    // Nếu session trước đó FULL
+    // thì sau khi trả slot phải mở lại
+    if ("FULL".equals(session.getStatus())) {
+
+        session.setStatus("OPEN");
+        sessionRepository.save(session);
+    }
+
+    return savedParticipant;
+}
+
+
+// =========================================================
+// 5. STAFF / ADMIN hủy Daily Visitor cho khách tại quầy
+// Chỉ được hủy trước giờ chơi ít nhất 30 phút
+// =========================================================
+public DailyVisitorParticipant cancelWalkInByStaff(
+        Long participantId,
+        Long staffId) {
+
+    DailyVisitorParticipant participant =
+            participantRepository.findById(participantId)
+                    .orElseThrow(() ->
+                            new RuntimeException(
+                                    "Không tìm thấy lượt đăng ký"));
+
+    User staff =
+            userRepository.findById(staffId)
+                    .orElseThrow(() ->
+                            new RuntimeException(
+                                    "Không tìm thấy nhân viên"));
+
+    // Chỉ STAFF / ADMIN
+    if (!"STAFF".equals(staff.getRole())
+            && !"ADMIN".equals(staff.getRole())) {
+
+        throw new RuntimeException(
+                "Chỉ STAFF hoặc ADMIN mới có thể hủy cho khách tại quầy");
+    }
+
+    // Phải là khách tại quầy
+    if (participant.getUser() != null) {
+        throw new RuntimeException(
+                "Đây là khách có tài khoản, khách phải tự hủy trên web");
+    }
+
+    // Chỉ CONFIRMED mới được hủy
+    if (!"CONFIRMED".equals(participant.getStatus())) {
+
+        if ("CANCELLED".equals(participant.getStatus())) {
+            throw new RuntimeException(
+                    "Lượt đăng ký đã được hủy trước đó");
+        }
+
+        if ("CHECKED_IN".equals(participant.getStatus())) {
+            throw new RuntimeException(
+                    "Lượt đăng ký đã check-in nên không thể hủy");
+        }
+
+        if ("NO_SHOW".equals(participant.getStatus())) {
+            throw new RuntimeException(
+                    "Lượt đăng ký đã bị đánh dấu NO_SHOW");
+        }
+
+        throw new RuntimeException(
+                "Trạng thái hiện tại không cho phép hủy");
+    }
+
+    DailyVisitorSession session =
+            participant.getSession();
+
+    if (session == null) {
+        throw new RuntimeException(
+                "Không tìm thấy lượt chơi");
+    }
+
+    if ("CANCELLED".equals(session.getStatus())
+            || "CLOSED".equals(session.getStatus())) {
+
+        throw new RuntimeException(
+                "Lượt chơi đã bị hủy hoặc đã đóng");
+    }
+
+    LocalDateTime now =
+            LocalDateTime.now();
+
+    LocalDateTime sessionStart =
+            LocalDateTime.of(
+                    session.getSessionDate(),
+                    session.getStartTime()
+            );
+
+    LocalDateTime cancelDeadline =
+            sessionStart.minusMinutes(30);
+
+    if (!now.isBefore(cancelDeadline)) {
+        throw new RuntimeException(
+                "Chỉ được hủy trước giờ chơi ít nhất 30 phút");
+    }
+
+    participant.setStatus("CANCELLED");
+
+    DailyVisitorParticipant savedParticipant =
+            participantRepository.save(participant);
+
+    // Nếu session đang FULL thì mở lại
+    if ("FULL".equals(session.getStatus())) {
+        session.setStatus("OPEN");
+        sessionRepository.save(session);
+    }
+
+    return savedParticipant;
+}
 }

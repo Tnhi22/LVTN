@@ -360,10 +360,17 @@ public BookingController(
 
     @DeleteMapping("/{id}")
     public NormalBooking cancelBooking(@PathVariable Long id) {
+        // Khách tại quầy phải do STAFF / ADMIN hủy bằng API riêng
 
         NormalBooking booking = bookingRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException("Không tìm thấy booking"));
+        // Khách tại quầy phải do STAFF / ADMIN hủy bằng API riêng
+        if (booking.getVisitor() != null) {
+        throw new RuntimeException(
+                "Booking tại quầy phải do STAFF hoặc ADMIN hủy"
+        );
+        }
 
         if ("CANCELLED".equals(booking.getStatus())) {
             throw new RuntimeException("Booking đã được hủy");
@@ -387,6 +394,101 @@ public BookingController(
         booking.setStatus("CANCELLED");
         return bookingRepository.save(booking);
     }
+
+        // =========================================================
+        // STAFF / ADMIN hủy Normal Booking của khách tại quầy
+        // Phải hủy trước giờ chơi ít nhất 2 tiếng
+        // =========================================================
+        @DeleteMapping("/{id}/cancel-walk-in")
+        public NormalBooking cancelWalkInBooking(
+                @PathVariable Long id,
+                @RequestParam Long staffId) {
+
+        // 1. Kiểm tra STAFF / ADMIN
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "Không tìm thấy nhân viên"));
+
+        if (!"STAFF".equals(staff.getRole())
+                && !"ADMIN".equals(staff.getRole())) {
+
+                throw new RuntimeException(
+                        "Chỉ STAFF hoặc ADMIN mới có thể hủy booking tại quầy"
+                );
+        }
+
+        // 2. Tìm booking
+        NormalBooking booking =
+                bookingRepository.findById(id)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Không tìm thấy booking"));
+
+        // 3. Phải là khách tại quầy
+        if (booking.getVisitor() == null) {
+                throw new RuntimeException(
+                        "Đây không phải booking của khách tại quầy"
+                );
+        }
+
+        // 4. Booking đã hủy
+        if ("CANCELLED".equals(booking.getStatus())) {
+                throw new RuntimeException(
+                        "Booking đã được hủy trước đó"
+                );
+        }
+
+        // Không cho hủy booking đã check-in / NO_SHOW
+        if ("CHECKED_IN".equals(booking.getStatus())) {
+                throw new RuntimeException(
+                        "Booking đã check-in nên không thể hủy"
+                );
+        }
+
+        if ("NO_SHOW".equals(booking.getStatus())) {
+                throw new RuntimeException(
+                        "Booking đã được ghi nhận NO_SHOW"
+                );
+        }
+
+        // 5. Kiểm tra phải trước 2 tiếng
+        LocalDateTime now = LocalDateTime.now();
+
+        LocalDateTime bookingStart =
+                LocalDateTime.of(
+                        booking.getBookingDate(),
+                        booking.getStartTime()
+                );
+
+        long minutesUntilStart =
+                Duration.between(
+                        now,
+                        bookingStart
+                ).toMinutes();
+
+        if (minutesUntilStart < 120) {
+                throw new RuntimeException(
+                        "Chỉ được hủy sân trước ít nhất 2 tiếng"
+                );
+        }
+
+        // 6. Hủy booking
+        booking.setStatus("CANCELLED");
+
+        booking.setCancelledByStaffId(
+                staff.getId()
+        );
+
+        // Nếu User.java của ní dùng field fullName
+        booking.setCancelledByStaffName(
+                staff.getFullName()
+        );
+
+        booking.setCancelledAt(now);
+
+        return bookingRepository.save(booking);
+        }
 
     @PostMapping("/{id}/check-in")
     public NormalBooking checkInBooking(
