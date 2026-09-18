@@ -19,4 +19,6 @@ public interface NormalBookingRepository extends JpaRepository<NormalBooking, Lo
         LocalDate endDate,
         String status
     );
+    List<NormalBooking>
+    findByUser_IdOrderByBookingDateDescStartTimeDesc(Long userId);
 }

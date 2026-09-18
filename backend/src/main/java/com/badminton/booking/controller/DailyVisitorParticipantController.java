@@ -4,6 +4,8 @@ import com.badminton.booking.entity.DailyVisitorParticipant;
 import com.badminton.booking.repository.DailyVisitorParticipantRepository;
 import com.badminton.booking.service.DailyVisitorParticipantService;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.util.List;
 
@@ -35,7 +37,9 @@ public class DailyVisitorParticipantController {
     @PostMapping("/register")
     public DailyVisitorParticipant register(
             @RequestParam Long sessionId,
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Jwt jwt) {
+
+        Long userId = Long.valueOf(jwt.getSubject());
 
         return participantService.register(
                 sessionId,
@@ -70,7 +74,9 @@ public class DailyVisitorParticipantController {
     @PostMapping("/{participantId}/check-in")
     public DailyVisitorParticipant checkIn(
             @PathVariable Long participantId,
-            @RequestParam Long staffId) {
+            @AuthenticationPrincipal Jwt jwt) {
+
+        Long staffId = Long.valueOf(jwt.getSubject());
 
         return participantService.checkIn(
                 participantId,
@@ -90,15 +96,20 @@ public class DailyVisitorParticipantController {
         );
     }
 
-    // STAFF / ADMIN hủy Daily Visitor cho khách tại quầy
-    @DeleteMapping("/{participantId}/cancel-by-staff")
-    public DailyVisitorParticipant cancelWalkInByStaff(
-            @PathVariable Long participantId,
-            @RequestParam Long staffId) {
+    // CUSTOMER hủy đăng ký online của chính mình
 
-        return participantService.cancelWalkInByStaff(
-                participantId,
-                staffId
-        );
-    }
+
+// STAFF / ADMIN hủy đăng ký khách tại quầy
+@DeleteMapping("/{participantId}/staff-cancel")
+public DailyVisitorParticipant cancelWalkInByStaff(
+        @PathVariable Long participantId,
+        @AuthenticationPrincipal Jwt jwt) {
+
+    Long staffId = Long.valueOf(jwt.getSubject());
+
+    return participantService.cancelWalkInByStaff(
+            participantId,
+            staffId
+    );
+}
 }

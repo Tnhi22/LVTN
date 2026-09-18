@@ -1,5 +1,6 @@
 package com.badminton.booking.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 @Entity
@@ -13,14 +14,26 @@ public class User {
     @Column(nullable = false)
     private String fullName;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @JsonIgnore
     private String password;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String phone;
+
+    @Column(name = "auth_provider", nullable = false)
+    private String authProvider = "PHONE";
+
+    @Column(name = "provider_id", unique = true)
+    private String providerId;
+
+    @Column(name = "email_verified", nullable = false)
+    private Boolean emailVerified = false;
+
+    @Column(name = "phone_verified", nullable = false)
+    private Boolean phoneVerified = false;
 
     @Column(nullable = false)
     private String role = "CUSTOMER";
@@ -69,6 +82,38 @@ public class User {
 
     public void setPhone(String phone) {
         this.phone = phone;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public String getProviderId() {
+        return providerId;
+    }
+
+    public void setProviderId(String providerId) {
+        this.providerId = providerId;
+    }
+
+    public Boolean getEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(Boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public Boolean getPhoneVerified() {
+        return phoneVerified;
+    }
+
+    public void setPhoneVerified(Boolean phoneVerified) {
+        this.phoneVerified = phoneVerified;
     }
 
     public String getRole() {
