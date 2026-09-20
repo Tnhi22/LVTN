@@ -12,6 +12,7 @@ import com.badminton.booking.repository.VisitorRepository;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,6 +37,62 @@ public class DailyVisitorScheduler {
         this.userRepository = userRepository;
     }
 
+    // =========================================================
+    // T - 30 PHÚT
+    //
+    // Nếu số slot đăng ký hợp lệ chưa đạt mức tối thiểu:
+    // 1. Hủy session
+    // 2. Chuyển participant CONFIRMED -> CANCELLED
+    // 3. Không đánh NO_SHOW và không áp dụng hình phạt
+    // =========================================================
+    @Transactional
+    @Scheduled(fixedRate = 60000)
+    public void checkMinimumRegisteredBeforeStart() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        List<DailyVisitorSession> sessions =
+                sessionRepository.findAll();
+
+        for (DailyVisitorSession session : sessions) {
+
+            if (!"OPEN".equals(session.getStatus())
+                    && !"FULL".equals(session.getStatus())) {
+                continue;
+            }
+
+            LocalDateTime startTime = LocalDateTime.of(
+                    session.getSessionDate(),
+                    session.getStartTime()
+            );
+
+            LocalDateTime registrationDeadline =
+                    startTime.minusMinutes(30);
+
+            // Chưa đến T-30 hoặc session đã bắt đầu thì không xử lý tại đây.
+            if (now.isBefore(registrationDeadline)
+                    || !now.isBefore(startTime)) {
+                continue;
+            }
+
+            List<DailyVisitorParticipant> participants =
+                    participantRepository.findBySessionId(
+                            session.getId()
+                    );
+
+            long registeredSlots =
+                    countRegisteredSlots(participants);
+
+            if (registeredSlots < session.getMinParticipants()) {
+                cancelBecauseNotEnoughRegistered(
+                        session,
+                        participants,
+                        registeredSlots
+                );
+            }
+        }
+    }
+
 
     // =========================================================
     // T + 30 PHÚT
@@ -46,6 +103,7 @@ public class DailyVisitorScheduler {
     // 4. Đếm tổng slot CHECKED_IN
     // 5. Nếu CHECKED_IN < minParticipants -> CANCELLED
     // =========================================================
+    @Transactional
     @Scheduled(fixedRate = 60000)
     public void checkMinimumCheckedInAfterStart() {
 
@@ -90,17 +148,8 @@ public class DailyVisitorScheduler {
             // =================================================
             // Tổng số slot đã đăng ký
             // =================================================
-            long registeredSlots = 0L;
-
-            for (DailyVisitorParticipant participant : participants) {
-
-                Integer slotCount =
-                        participant.getSlotCount();
-
-                if (slotCount != null) {
-                    registeredSlots += slotCount;
-                }
-            }
+            long registeredSlots =
+                    countRegisteredSlots(participants);
 
 
             // =================================================
@@ -110,22 +159,10 @@ public class DailyVisitorScheduler {
             if (registeredSlots
                     < session.getMinParticipants()) {
 
-                session.setStatus("CANCELLED");
-
-                session.setCancelReason(
-                        "NOT_ENOUGH_REGISTERED_PLAYERS"
-                );
-
-                sessionRepository.save(session);
-
-                System.out.println(
-                        "Daily Visitor session "
-                                + session.getId()
-                                + " CANCELLED: "
-                                + registeredSlots
-                                + "/"
-                                + session.getMinParticipants()
-                                + " registered."
+                cancelBecauseNotEnoughRegistered(
+                        session,
+                        participants,
+                        registeredSlots
                 );
 
                 continue;
@@ -314,5 +351,65 @@ public class DailyVisitorScheduler {
                             + " checked-in."
             );
         }
+    }
+
+    private long countRegisteredSlots(
+            List<DailyVisitorParticipant> participants) {
+
+        long registeredSlots = 0L;
+
+        for (DailyVisitorParticipant participant : participants) {
+
+            String status = participant.getStatus();
+
+            // Chỉ tính các đăng ký còn hiệu lực.
+            if (!"CONFIRMED".equals(status)
+                    && !"CHECKED_IN".equals(status)) {
+                continue;
+            }
+
+            Integer slotCount = participant.getSlotCount();
+
+            if (slotCount != null && slotCount > 0) {
+                registeredSlots += slotCount;
+            }
+        }
+
+        return registeredSlots;
+    }
+
+    private void cancelBecauseNotEnoughRegistered(
+            DailyVisitorSession session,
+            List<DailyVisitorParticipant> participants,
+            long registeredSlots) {
+
+        // Buổi chơi bị hủy do thiếu người đăng ký, không phải lỗi vắng mặt.
+        for (DailyVisitorParticipant participant : participants) {
+
+            if ("CONFIRMED".equals(participant.getStatus())) {
+                participant.setStatus("CANCELLED");
+            }
+        }
+
+        participantRepository.saveAll(participants);
+
+        session.setStatus("CANCELLED");
+        session.setCancelReason(
+                "NOT_ENOUGH_REGISTERED_PLAYERS"
+        );
+
+        sessionRepository.save(session);
+
+        System.out.println(
+                "Daily Visitor session "
+                        + session.getId()
+                        + " CANCELLED: "
+                        + registeredSlots
+                        + "/"
+                        + session.getMinParticipants()
+                        + " registered. "
+                        + "Confirmed participants were cancelled "
+                        + "without penalty."
+        );
     }
 }

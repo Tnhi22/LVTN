@@ -24,6 +24,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.badminton.booking.entity.CourtPrice;
+import com.badminton.booking.repository.CourtPriceRepository;
+import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -41,19 +44,22 @@ public class BookingController {
     private final CourtRepository courtRepository;
     private final UserViolationRepository violationRepository;
     private final VisitorRepository visitorRepository;
+    private final CourtPriceRepository courtPriceRepository;
 
     public BookingController(
             NormalBookingRepository bookingRepository,
             UserRepository userRepository,
             CourtRepository courtRepository,
-            UserViolationRepository violationRepository,
-            VisitorRepository visitorRepository) {
+                UserViolationRepository violationRepository,
+                VisitorRepository visitorRepository,
+                CourtPriceRepository courtPriceRepository) {
 
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.courtRepository = courtRepository;
         this.violationRepository = violationRepository;
         this.visitorRepository = visitorRepository;
+        this.courtPriceRepository = courtPriceRepository;
     }
 
     // CUSTOMER tự đặt sân. userId luôn được lấy từ JWT.
@@ -364,10 +370,27 @@ public class BookingController {
             booking.setStartTime(request.getStartTime());
             booking.setEndTime(request.getEndTime());
             booking.setStatus(initialStatus);
-            booking.setCheckedInAt(checkedInAt);
-            booking.setCheckedInBy(checkedInBy);
-            bookings.add(booking);
-        }
+                booking.setCheckedInAt(checkedInAt);
+                booking.setCheckedInBy(checkedInBy);
+
+                CourtPrice courtPrice = courtPriceRepository
+                        .findByCourtTypeIdAndActiveTrue(
+                                court.getRoom().getCourtType().getId()
+                        )
+                        .orElseThrow(() -> new BusinessException(
+                                HttpStatus.CONFLICT,
+                                "Loại sân này chưa được cấu hình giá"
+                        ));
+
+                Long totalAmount = calculateTotalAmount(
+                        courtPrice,
+                        request.getStartTime(),
+                        request.getEndTime()
+                );
+
+                booking.setTotalAmount(totalAmount);
+                bookings.add(booking);
+                        }
 
         return bookingRepository.saveAll(bookings);
     }
@@ -420,6 +443,13 @@ public class BookingController {
                     HttpStatus.CONFLICT,
                     "Booking đã được ghi nhận NO_SHOW"
             );
+        }
+
+        if ("COMPLETED".equals(booking.getStatus())) {
+        throw new BusinessException(
+                HttpStatus.CONFLICT,
+                "Booking đã hoàn thành nên không thể hủy"
+        );
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -497,6 +527,13 @@ public class BookingController {
             );
         }
 
+        if ("COMPLETED".equals(booking.getStatus())) {
+        throw new BusinessException(
+                HttpStatus.CONFLICT,
+                "Booking đã hoàn thành nên không thể hủy"
+        );
+        }
+
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime bookingStart = LocalDateTime.of(
                 booking.getBookingDate(),
@@ -568,6 +605,12 @@ public class BookingController {
                     "Booking đã được check-in"
             );
         }
+        if ("COMPLETED".equals(booking.getStatus())) {
+        throw new BusinessException(
+                HttpStatus.CONFLICT,
+                "Booking đã hoàn thành nên không thể check-in lại"
+        );
+        }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime bookingStart = LocalDateTime.of(
@@ -613,4 +656,58 @@ public class BookingController {
         return bookingRepository
                 .findByUser_IdOrderByBookingDateDescStartTimeDesc(userId);
     }
+
+        private Long calculateTotalAmount(
+                CourtPrice courtPrice,
+                LocalTime startTime,
+                LocalTime endTime) {
+
+        if (startTime.isBefore(courtPrice.getOpeningTime())
+                || endTime.isAfter(courtPrice.getClosingTime())) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Chỉ được đặt sân từ "
+                                + courtPrice.getOpeningTime()
+                                + " đến "
+                                + courtPrice.getClosingTime()
+                );
+        }
+
+        LocalTime peakStart = courtPrice.getPeakStartTime();
+
+        long normalMinutes = 0L;
+        long peakMinutes = 0L;
+
+        if (startTime.isBefore(peakStart)) {
+                LocalTime normalEnd = endTime.isBefore(peakStart)
+                        ? endTime
+                        : peakStart;
+
+                normalMinutes = Duration.between(
+                        startTime,
+                        normalEnd
+                ).toMinutes();
+        }
+
+        if (endTime.isAfter(peakStart)) {
+                LocalTime actualPeakStart = startTime.isAfter(peakStart)
+                        ? startTime
+                        : peakStart;
+
+                peakMinutes = Duration.between(
+                        actualPeakStart,
+                        endTime
+                ).toMinutes();
+        }
+
+        long normalAmount =
+                courtPrice.getNormalPricePerHour()
+                        * normalMinutes / 60;
+
+        long peakAmount =
+                courtPrice.getPeakPricePerHour()
+                        * peakMinutes / 60;
+
+        return normalAmount + peakAmount;
+        }
 }

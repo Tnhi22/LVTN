@@ -126,20 +126,33 @@ public class BookingScheduler {
                 continue;
             }
 
-            String newStatus;
+                String oldStatus = user.getStatus();
+                String newStatus;
 
-            if ("ACTIVE".equals(user.getStatus())) {
+                if ("ACTIVE".equals(oldStatus)) {
                 newStatus = "WARNING";
 
-            } else if ("WARNING".equals(user.getStatus())) {
+                } else if ("WARNING".equals(oldStatus)) {
                 newStatus = "SUSPENDED";
 
-            } else {
-                newStatus = user.getStatus();
-            }
+                } else {
+                newStatus = oldStatus;
+                }
 
-            user.setStatus(newStatus);
-            userRepository.save(user);
+                user.setStatus(newStatus);
+                userRepository.save(user);
+
+                // Vi phạm lần đầu: ACTIVE -> WARNING
+                // Tự động hủy tất cả booking PENDING trong tương lai
+                if ("ACTIVE".equals(oldStatus)
+                        && "WARNING".equals(newStatus)) {
+
+                cancelFuturePendingBookings(
+                        user.getId(),
+                        booking.getId(),
+                        now
+                );
+                }
 
             UserViolation violation =
                     new UserViolation();
@@ -149,9 +162,70 @@ public class BookingScheduler {
             violation.setViolationType("NO_SHOW");
             violation.setUserStatusAfter(newStatus);
 
-            violationRepository.save(violation);
+        UserViolation savedViolation =
+                violationRepository.save(violation);
+
+        LocalDateTime restrictionEnd = null;
+
+        if ("WARNING".equals(newStatus)) {
+            restrictionEnd =
+                    savedViolation.getCreatedAt().plusDays(2);
         }
-    }
+
+        List<NormalBooking> userBookings =
+                bookingRepository.findAll();
+
+        for (NormalBooking otherBooking : userBookings) {
+
+            // Không xử lý chính booking vừa NO_SHOW
+            if (otherBooking.getId().equals(booking.getId())) {
+                continue;
+            }
+
+            // Chỉ booking của CUSTOMER này
+            if (otherBooking.getUser() == null
+                    || !otherBooking.getUser().getId().equals(user.getId())) {
+                continue;
+            }
+
+            // Chỉ tự hủy booking còn PENDING
+            if (!"PENDING".equals(otherBooking.getStatus())) {
+                continue;
+            }
+
+            LocalDateTime otherBookingStart =
+                    LocalDateTime.of(
+                            otherBooking.getBookingDate(),
+                            otherBooking.getStartTime()
+                    );
+
+            // Booking đã qua thì không xử lý ở đây
+            if (!otherBookingStart.isAfter(now)) {
+                continue;
+            }
+
+            // Nếu WARNING:
+            // chỉ hủy booking nằm trong 2 ngày bị hạn chế
+            if ("WARNING".equals(newStatus)
+                    && !otherBookingStart.isBefore(restrictionEnd)) {
+                continue;
+            }
+
+            // WARNING trong thời hạn hoặc SUSPENDED
+            otherBooking.setStatus("CANCELLED");
+            bookingRepository.save(otherBooking);
+
+            System.out.println(
+                    "Auto-cancel booking "
+                            + otherBooking.getId()
+                            + " cua user "
+                            + user.getId()
+                            + " do user "
+                            + newStatus
+            );
+        }
+                }
+            }
 
 
     @Scheduled(fixedRate = 60000)
@@ -220,4 +294,81 @@ public class BookingScheduler {
             }
         }
     }
+
+
+            // ==========================================
+        // CHECKED_IN -> COMPLETED KHI HẾT GIỜ CHƠI
+        // ==========================================
+        @Scheduled(fixedRate = 60000)
+        public void completeFinishedBookings() {
+
+            List<NormalBooking> bookings =
+                    bookingRepository.findAll();
+
+            LocalDateTime now = LocalDateTime.now();
+
+            for (NormalBooking booking : bookings) {
+
+                // Chỉ xử lý booking đã check-in
+                if (!"CHECKED_IN".equals(booking.getStatus())) {
+                    continue;
+                }
+
+                LocalDateTime bookingEnd =
+                        LocalDateTime.of(
+                                booking.getBookingDate(),
+                                booking.getEndTime()
+                        );
+
+                // Chưa hết giờ chơi thì giữ CHECKED_IN
+                if (now.isBefore(bookingEnd)) {
+                    continue;
+                }
+
+                // Đã hết giờ chơi
+                booking.setStatus("COMPLETED");
+                bookingRepository.save(booking);
+
+                System.out.println(
+                        "Booking "
+                                + booking.getId()
+                                + " da COMPLETED."
+                );
+            }
+        }
+
+
+                private void cancelFuturePendingBookings(
+                Long userId,
+                Long noShowBookingId,
+                LocalDateTime now) {
+
+        List<NormalBooking> pendingBookings =
+                bookingRepository.findByUser_IdAndStatus(
+                        userId,
+                        "PENDING"
+                );
+
+        for (NormalBooking pendingBooking : pendingBookings) {
+
+                // Không xử lý booking vừa chuyển thành NO_SHOW
+                if (pendingBooking.getId().equals(noShowBookingId)) {
+                continue;
+                }
+
+                LocalDateTime pendingStart =
+                        LocalDateTime.of(
+                                pendingBooking.getBookingDate(),
+                                pendingBooking.getStartTime()
+                        );
+
+                // Chỉ hủy booking chưa tới giờ chơi
+                if (pendingStart.isAfter(now)) {
+                pendingBooking.setStatus("CANCELLED");
+                pendingBooking.setCancelledAt(now);
+                }
+        }
+
+        bookingRepository.saveAll(pendingBookings);
+        }
 }

@@ -41,9 +41,14 @@ public class NormalBooking {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    // Cho phép null đối với các booking cũ chưa được tính giá.
+    @Column(name = "total_amount")
+    private Long totalAmount;
+
     private LocalDateTime checkedInAt;
 
     private Long checkedInBy;
+
     @Column(name = "cancelled_by_staff_id")
     private Long cancelledByStaffId;
 
@@ -135,6 +140,14 @@ public class NormalBooking {
         return createdAt;
     }
 
+    public Long getTotalAmount() {
+        return totalAmount;
+    }
+
+    public void setTotalAmount(Long totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
     public LocalDateTime getCheckedInAt() {
         return checkedInAt;
     }
@@ -149,6 +162,30 @@ public class NormalBooking {
 
     public void setCheckedInBy(Long checkedInBy) {
         this.checkedInBy = checkedInBy;
+    }
+
+    public Long getCancelledByStaffId() {
+        return cancelledByStaffId;
+    }
+
+    public void setCancelledByStaffId(Long cancelledByStaffId) {
+        this.cancelledByStaffId = cancelledByStaffId;
+    }
+
+    public String getCancelledByStaffName() {
+        return cancelledByStaffName;
+    }
+
+    public void setCancelledByStaffName(String cancelledByStaffName) {
+        this.cancelledByStaffName = cancelledByStaffName;
+    }
+
+    public LocalDateTime getCancelledAt() {
+        return cancelledAt;
+    }
+
+    public void setCancelledAt(LocalDateTime cancelledAt) {
+        this.cancelledAt = cancelledAt;
     }
 
     public String getComplaintStatus() {
@@ -189,29 +226,5 @@ public class NormalBooking {
 
     public void setComplaintResolvedBy(Long complaintResolvedBy) {
         this.complaintResolvedBy = complaintResolvedBy;
-    }
-
-        public Long getCancelledByStaffId() {
-        return cancelledByStaffId;
-    }
-
-    public void setCancelledByStaffId(Long cancelledByStaffId) {
-        this.cancelledByStaffId = cancelledByStaffId;
-    }
-
-    public String getCancelledByStaffName() {
-        return cancelledByStaffName;
-    }
-
-    public void setCancelledByStaffName(String cancelledByStaffName) {
-        this.cancelledByStaffName = cancelledByStaffName;
-    }
-
-    public LocalDateTime getCancelledAt() {
-        return cancelledAt;
-    }
-
-    public void setCancelledAt(LocalDateTime cancelledAt) {
-        this.cancelledAt = cancelledAt;
     }
 }

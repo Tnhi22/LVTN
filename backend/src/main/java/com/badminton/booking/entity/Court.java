@@ -17,6 +17,8 @@ public class Court {
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
 
+    // false = sân ngừng hoạt động lâu dài / không còn sử dụng
+    // Maintenance tạm thời sẽ được quản lý bởi CourtMaintenance
     @Column(nullable = false)
     private Boolean active = true;
 

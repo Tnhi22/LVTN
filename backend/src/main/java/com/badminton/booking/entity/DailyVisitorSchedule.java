@@ -26,7 +26,7 @@ public class DailyVisitorSchedule {
     private LocalTime endTime;
 
     @Column(nullable = false)
-    private Integer minParticipants = 4;
+    private Integer minParticipants = 6;
 
     @Column(nullable = false)
     private Integer maxParticipants = 8;
