@@ -41,9 +41,71 @@ public class NormalBooking {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
-    // Cho phép null đối với các booking cũ chưa được tính giá.
+    /*
+     * Tổng tiền của booking:
+     * tiền sân + tiền ống cầu đặt kèm.
+     */
     @Column(name = "total_amount")
     private Long totalAmount;
+
+    // =====================================================
+    // THÔNG TIN ỐNG CẦU ĐẶT KÈM
+    // =====================================================
+
+    /*
+     * Sản phẩm cầu mà khách chọn.
+     * Null nếu booking không mua cầu.
+     */
+    @ManyToOne
+    @JoinColumn(name = "shuttlecock_product_id")
+    private Product shuttlecockProduct;
+
+    /*
+     * Số ống cầu khách đặt.
+     * Booking cũ có thể null.
+     */
+    @Column(name = "shuttlecock_quantity_tubes")
+    private Integer shuttlecockQuantityTubes = 0;
+
+    /*
+     * Giá một ống tại thời điểm đặt.
+     * Lưu lại để sau này sản phẩm đổi giá
+     * vẫn không làm thay đổi booking cũ.
+     */
+    @Column(name = "shuttlecock_unit_price")
+    private Long shuttlecockUnitPrice;
+
+    /*
+     * Tổng tiền cầu:
+     * số ống × giá một ống.
+     */
+    @Column(name = "shuttlecock_amount")
+    private Long shuttlecockAmount = 0L;
+
+    /*
+     * true:
+     * số lượng đang được giữ cho booking.
+     *
+     * false:
+     * không giữ hàng, đã check-in,
+     * đã hủy hoặc đã NO_SHOW.
+     */
+    @Column(name = "shuttlecock_reservation_active")
+    private Boolean shuttlecockReservationActive = false;
+
+    /*
+     * true:
+     * đã xuất kho FIFO khi check-in.
+     *
+     * Dùng để ngăn việc gọi check-in nhiều lần
+     * làm trừ kho nhiều lần.
+     */
+    @Column(name = "shuttlecock_issued")
+    private Boolean shuttlecockIssued = false;
+
+    // =====================================================
+    // CHECK-IN VÀ HỦY BOOKING
+    // =====================================================
 
     private LocalDateTime checkedInAt;
 
@@ -58,6 +120,10 @@ public class NormalBooking {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
+    // =====================================================
+    // KHIẾU NẠI
+    // =====================================================
+
     private String complaintStatus = "NONE";
     private String complaintReason;
     private LocalDateTime complainedAt;
@@ -69,7 +135,34 @@ public class NormalBooking {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+
+        if (status == null) {
+            status = "PENDING";
+        }
+
+        if (complaintStatus == null) {
+            complaintStatus = "NONE";
+        }
+
+        if (shuttlecockQuantityTubes == null) {
+            shuttlecockQuantityTubes = 0;
+        }
+
+        if (shuttlecockAmount == null) {
+            shuttlecockAmount = 0L;
+        }
+
+        if (shuttlecockReservationActive == null) {
+            shuttlecockReservationActive = false;
+        }
+
+        if (shuttlecockIssued == null) {
+            shuttlecockIssued = false;
+        }
     }
 
     public Long getId() {
@@ -148,11 +241,76 @@ public class NormalBooking {
         this.totalAmount = totalAmount;
     }
 
+    public Product getShuttlecockProduct() {
+        return shuttlecockProduct;
+    }
+
+    public void setShuttlecockProduct(
+            Product shuttlecockProduct) {
+
+        this.shuttlecockProduct = shuttlecockProduct;
+    }
+
+    public Integer getShuttlecockQuantityTubes() {
+        return shuttlecockQuantityTubes;
+    }
+
+    public void setShuttlecockQuantityTubes(
+            Integer shuttlecockQuantityTubes) {
+
+        this.shuttlecockQuantityTubes =
+                shuttlecockQuantityTubes;
+    }
+
+    public Long getShuttlecockUnitPrice() {
+        return shuttlecockUnitPrice;
+    }
+
+    public void setShuttlecockUnitPrice(
+            Long shuttlecockUnitPrice) {
+
+        this.shuttlecockUnitPrice =
+                shuttlecockUnitPrice;
+    }
+
+    public Long getShuttlecockAmount() {
+        return shuttlecockAmount;
+    }
+
+    public void setShuttlecockAmount(
+            Long shuttlecockAmount) {
+
+        this.shuttlecockAmount = shuttlecockAmount;
+    }
+
+    public Boolean getShuttlecockReservationActive() {
+        return shuttlecockReservationActive;
+    }
+
+    public void setShuttlecockReservationActive(
+            Boolean shuttlecockReservationActive) {
+
+        this.shuttlecockReservationActive =
+                shuttlecockReservationActive;
+    }
+
+    public Boolean getShuttlecockIssued() {
+        return shuttlecockIssued;
+    }
+
+    public void setShuttlecockIssued(
+            Boolean shuttlecockIssued) {
+
+        this.shuttlecockIssued = shuttlecockIssued;
+    }
+
     public LocalDateTime getCheckedInAt() {
         return checkedInAt;
     }
 
-    public void setCheckedInAt(LocalDateTime checkedInAt) {
+    public void setCheckedInAt(
+            LocalDateTime checkedInAt) {
+
         this.checkedInAt = checkedInAt;
     }
 
@@ -168,23 +326,31 @@ public class NormalBooking {
         return cancelledByStaffId;
     }
 
-    public void setCancelledByStaffId(Long cancelledByStaffId) {
-        this.cancelledByStaffId = cancelledByStaffId;
+    public void setCancelledByStaffId(
+            Long cancelledByStaffId) {
+
+        this.cancelledByStaffId =
+                cancelledByStaffId;
     }
 
     public String getCancelledByStaffName() {
         return cancelledByStaffName;
     }
 
-    public void setCancelledByStaffName(String cancelledByStaffName) {
-        this.cancelledByStaffName = cancelledByStaffName;
+    public void setCancelledByStaffName(
+            String cancelledByStaffName) {
+
+        this.cancelledByStaffName =
+                cancelledByStaffName;
     }
 
     public LocalDateTime getCancelledAt() {
         return cancelledAt;
     }
 
-    public void setCancelledAt(LocalDateTime cancelledAt) {
+    public void setCancelledAt(
+            LocalDateTime cancelledAt) {
+
         this.cancelledAt = cancelledAt;
     }
 
@@ -192,7 +358,9 @@ public class NormalBooking {
         return complaintStatus;
     }
 
-    public void setComplaintStatus(String complaintStatus) {
+    public void setComplaintStatus(
+            String complaintStatus) {
+
         this.complaintStatus = complaintStatus;
     }
 
@@ -200,7 +368,9 @@ public class NormalBooking {
         return complaintReason;
     }
 
-    public void setComplaintReason(String complaintReason) {
+    public void setComplaintReason(
+            String complaintReason) {
+
         this.complaintReason = complaintReason;
     }
 
@@ -208,7 +378,9 @@ public class NormalBooking {
         return complainedAt;
     }
 
-    public void setComplainedAt(LocalDateTime complainedAt) {
+    public void setComplainedAt(
+            LocalDateTime complainedAt) {
+
         this.complainedAt = complainedAt;
     }
 
@@ -216,15 +388,21 @@ public class NormalBooking {
         return complaintResolvedAt;
     }
 
-    public void setComplaintResolvedAt(LocalDateTime complaintResolvedAt) {
-        this.complaintResolvedAt = complaintResolvedAt;
+    public void setComplaintResolvedAt(
+            LocalDateTime complaintResolvedAt) {
+
+        this.complaintResolvedAt =
+                complaintResolvedAt;
     }
 
     public Long getComplaintResolvedBy() {
         return complaintResolvedBy;
     }
 
-    public void setComplaintResolvedBy(Long complaintResolvedBy) {
-        this.complaintResolvedBy = complaintResolvedBy;
+    public void setComplaintResolvedBy(
+            Long complaintResolvedBy) {
+
+        this.complaintResolvedBy =
+                complaintResolvedBy;
     }
 }

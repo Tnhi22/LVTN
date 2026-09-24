@@ -12,6 +12,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.badminton.booking.dto.GoogleLoginRequest;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import java.nio.charset.StandardCharsets;
+
+import java.util.Locale;
 
 @Service
 public class AuthService {
@@ -19,16 +24,21 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final GoogleTokenVerifierService
+        googleTokenVerifierService;
 
-    public AuthService(
-            UserRepository userRepository,
-            PasswordEncoder passwordEncoder,
-            JwtService jwtService) {
+public AuthService(
+        UserRepository userRepository,
+        PasswordEncoder passwordEncoder,
+        JwtService jwtService,
+        GoogleTokenVerifierService googleTokenVerifierService) {
 
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-    }
+    this.userRepository = userRepository;
+    this.passwordEncoder = passwordEncoder;
+    this.jwtService = jwtService;
+    this.googleTokenVerifierService =
+            googleTokenVerifierService;
+}
 
     // =====================================================
     // ĐĂNG KÝ BẰNG SỐ ĐIỆN THOẠI
@@ -53,14 +63,7 @@ public class AuthService {
             );
         }
 
-        if (request.getPassword() == null
-                || request.getPassword().isBlank()) {
-
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Mật khẩu không được để trống"
-            );
-        }
+        validatePassword(request.getPassword());
 
         String fullName = request.getFullName().trim();
         String phone = normalizePhone(request.getPhone());
@@ -181,7 +184,36 @@ public class AuthService {
                 user.getRole()
         );
     }
+        // =====================================================
+        // KIỂM TRA MẬT KHẨU
+        // =====================================================
+        private void validatePassword(String password) {
 
+        if (password == null || password.isBlank()) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Mật khẩu không được để trống"
+                );
+        }
+
+        if (password.length() < 8) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Mật khẩu phải có ít nhất 8 ký tự"
+                );
+        }
+
+        int passwordBytes = password
+                .getBytes(StandardCharsets.UTF_8)
+                .length;
+
+        if (passwordBytes > 72) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Mật khẩu không được vượt quá 72 byte"
+                );
+        }
+        }
     // =====================================================
     // CHUẨN HÓA SỐ ĐIỆN THOẠI
     // =====================================================
@@ -214,4 +246,132 @@ public class AuthService {
 
         return phone;
     }
+
+        // =====================================================
+        // ĐĂNG NHẬP BẰNG GOOGLE
+        // =====================================================
+        @Transactional
+        public AuthResponse loginByGoogle(
+                GoogleLoginRequest request) {
+
+        if (request == null) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Dữ liệu đăng nhập Google không được để trống"
+                );
+        }
+
+        GoogleIdToken.Payload payload =
+                googleTokenVerifierService.verify(
+                        request.getIdToken()
+                );
+
+        String providerId = payload.getSubject();
+
+        String email = payload.getEmail();
+
+        if (email == null || email.isBlank()) {
+                throw new BusinessException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Tài khoản Google không cung cấp email"
+                );
+        }
+
+        email = email.trim()
+                .toLowerCase(Locale.ROOT);
+
+        String fullName =
+                (String) payload.get("name");
+
+        if (fullName == null || fullName.isBlank()) {
+                fullName = email.substring(
+                        0,
+                        email.indexOf("@")
+                );
+        }
+
+        User user = userRepository
+                .findByProviderId(providerId)
+                .orElse(null);
+
+        if (user == null) {
+                user = userRepository
+                        .findByEmail(email)
+                        .orElse(null);
+        }
+
+        if (user == null) {
+                user = new User();
+
+                user.setFullName(fullName.trim());
+                user.setEmail(email);
+                user.setPhone(null);
+                user.setPassword(null);
+                user.setAuthProvider("GOOGLE");
+                user.setProviderId(providerId);
+                user.setEmailVerified(true);
+                user.setPhoneVerified(false);
+                user.setRole("CUSTOMER");
+                user.setStatus("ACTIVE");
+
+                user = userRepository.save(user);
+
+        } else {
+                String currentProviderId =
+                        user.getProviderId();
+
+                if (currentProviderId != null
+                        && !currentProviderId.equals(
+                                providerId
+                        )) {
+
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Email đã liên kết với một tài khoản khác"
+                );
+                }
+
+                user.setProviderId(providerId);
+                user.setEmailVerified(true);
+
+                if ("PHONE".equals(user.getAuthProvider())) {
+                user.setAuthProvider("PHONE_GOOGLE");
+                } else {
+                user.setAuthProvider("GOOGLE");
+                }
+
+                user = userRepository.save(user);
+        }
+
+        if ("SUSPENDED".equals(user.getStatus())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "Tài khoản đã bị khóa"
+                );
+        }
+
+        if (!"ACTIVE".equals(user.getStatus())
+                && !"WARNING".equals(
+                        user.getStatus()
+                )) {
+
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "Tài khoản hiện không hoạt động"
+                );
+        }
+
+        String accessToken =
+                jwtService.generateToken(user);
+
+        return new AuthResponse(
+                accessToken,
+                "Bearer",
+                user.getId(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getRole()
+        );
+        }
 }

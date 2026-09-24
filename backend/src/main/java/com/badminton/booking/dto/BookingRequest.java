@@ -8,7 +8,7 @@ public class BookingRequest {
 
     private Long userId;
 
-    // Giữ lại để tương thích booking 1 sân cũ
+    // Giữ lại để tương thích booking một sân cũ
     private Long courtId;
 
     // Booking nhiều sân
@@ -20,6 +20,21 @@ public class BookingRequest {
 
     private String walkInName;
     private String walkInPhone;
+
+    /*
+     * Sản phẩm ống cầu khách muốn đặt kèm.
+     * Có thể null nếu khách không mua cầu.
+     */
+    private Long productId;
+
+    /*
+     * Số ống cầu khách muốn đặt.
+     * Null hoặc 0 nghĩa là không mua.
+     */
+    private Integer quantityTubes;
+
+    public BookingRequest() {
+    }
 
     public Long getUserId() {
         return userId;
@@ -83,5 +98,21 @@ public class BookingRequest {
 
     public void setWalkInPhone(String walkInPhone) {
         this.walkInPhone = walkInPhone;
+    }
+
+    public Long getProductId() {
+        return productId;
+    }
+
+    public void setProductId(Long productId) {
+        this.productId = productId;
+    }
+
+    public Integer getQuantityTubes() {
+        return quantityTubes;
+    }
+
+    public void setQuantityTubes(Integer quantityTubes) {
+        this.quantityTubes = quantityTubes;
     }
 }

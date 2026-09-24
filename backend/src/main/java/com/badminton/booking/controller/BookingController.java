@@ -23,6 +23,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.badminton.booking.service.BookingInventoryService;
+import org.springframework.transaction.annotation.Transactional;
+import com.badminton.booking.entity.Product;
+import com.badminton.booking.repository.CourtMaintenanceRepository;
 
 import com.badminton.booking.entity.CourtPrice;
 import com.badminton.booking.repository.CourtPriceRepository;
@@ -45,24 +49,31 @@ public class BookingController {
     private final UserViolationRepository violationRepository;
     private final VisitorRepository visitorRepository;
     private final CourtPriceRepository courtPriceRepository;
+    private final BookingInventoryService bookingInventoryService;
+    private final CourtMaintenanceRepository courtMaintenanceRepository;
 
-    public BookingController(
-            NormalBookingRepository bookingRepository,
-            UserRepository userRepository,
-            CourtRepository courtRepository,
+        public BookingController(
+                NormalBookingRepository bookingRepository,
+                UserRepository userRepository,
+                CourtRepository courtRepository,
+                CourtMaintenanceRepository courtMaintenanceRepository,
                 UserViolationRepository violationRepository,
                 VisitorRepository visitorRepository,
-                CourtPriceRepository courtPriceRepository) {
+                CourtPriceRepository courtPriceRepository,
+                BookingInventoryService bookingInventoryService) {
 
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.courtRepository = courtRepository;
+        this.courtMaintenanceRepository = courtMaintenanceRepository;
         this.violationRepository = violationRepository;
         this.visitorRepository = visitorRepository;
         this.courtPriceRepository = courtPriceRepository;
-    }
+        this.bookingInventoryService = bookingInventoryService;
+        }
 
     // CUSTOMER tự đặt sân. userId luôn được lấy từ JWT.
+    @Transactional
     @PostMapping
     public List<NormalBooking> createBooking(
             @RequestBody BookingRequest request,
@@ -75,6 +86,7 @@ public class BookingController {
     }
 
     // STAFF/ADMIN tạo booking tại quầy. staffId được lấy từ JWT.
+    @Transactional
     @PostMapping("/walk-in")
     public List<NormalBooking> createWalkInBooking(
             @RequestBody BookingRequest request,
@@ -332,6 +344,27 @@ public class BookingController {
                             HttpStatus.NOT_FOUND,
                             "Không tìm thấy sân ID: " + courtId
                     ));
+        if (!Boolean.TRUE.equals(court.getActive())) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Sân " + court.getName() + " đang ngừng hoạt động"
+                );
+                }
+
+                boolean maintenanceOverlap =
+                        courtMaintenanceRepository.existsActiveMaintenanceOverlap(
+                                courtId,
+                                bookingStart,
+                                bookingEnd
+                        );
+
+                if (maintenanceOverlap) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Sân " + court.getName()
+                                + " đang bảo trì hoặc gặp sự cố trong khung giờ này"
+                );
+                }
 
             List<NormalBooking> existingBookings =
                     bookingRepository.findByCourtIdAndBookingDateAndStatusNot(
@@ -359,6 +392,78 @@ public class BookingController {
             selectedCourts.add(court);
         }
 
+
+                // =================================================
+        // KIỂM TRA VÀ GIỮ ỐNG CẦU CHO BOOKING
+        // =================================================
+
+        Integer requestedTubes =
+                request.getQuantityTubes() == null
+                        ? 0
+                        : request.getQuantityTubes();
+
+        if (requestedTubes < 0) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Số ống cầu không được nhỏ hơn 0"
+            );
+        }
+
+        if (requestedTubes > 0
+                && request.getProductId() == null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Vui lòng chọn sản phẩm cầu"
+            );
+        }
+
+        if (request.getProductId() != null
+                && requestedTubes <= 0) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Số ống cầu phải lớn hơn 0"
+            );
+        }
+
+        /*
+         * Khách tại quầy mua qua API counter-sales.
+         * Không gắn đơn mua cầu vào walk-in booking.
+         */
+        if (staff != null && requestedTubes > 0) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Khách tại quầy mua cầu bằng chức năng bán tại quầy"
+            );
+        }
+
+        /*
+         * Tránh một số lượng cầu bị sao chép
+         * vào nhiều NormalBooking khi đặt nhiều sân.
+         */
+        if (requestedTubes > 0
+                && selectedCourts.size() != 1) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Booking có mua cầu chỉ được chọn một sân"
+            );
+        }
+
+        Product reservedProduct = null;
+        Long shuttlecockAmount = 0L;
+
+        if (requestedTubes > 0) {
+
+            reservedProduct =
+                    bookingInventoryService.reserveProduct(
+                            request.getProductId(),
+                            requestedTubes
+                    );
+
+            shuttlecockAmount =
+                    reservedProduct.getTubePrice()
+                            * requestedTubes;
+        }
+
         List<NormalBooking> bookings = new ArrayList<>();
 
         for (Court court : selectedCourts) {
@@ -372,6 +477,29 @@ public class BookingController {
             booking.setStatus(initialStatus);
                 booking.setCheckedInAt(checkedInAt);
                 booking.setCheckedInBy(checkedInBy);
+                            booking.setShuttlecockProduct(
+                    reservedProduct
+            );
+
+            booking.setShuttlecockQuantityTubes(
+                    requestedTubes
+            );
+
+            booking.setShuttlecockUnitPrice(
+                    reservedProduct == null
+                            ? null
+                            : reservedProduct.getTubePrice()
+            );
+
+            booking.setShuttlecockAmount(
+                    shuttlecockAmount
+            );
+
+            booking.setShuttlecockReservationActive(
+                    requestedTubes > 0
+            );
+
+            booking.setShuttlecockIssued(false);
 
                 CourtPrice courtPrice = courtPriceRepository
                         .findByCourtTypeIdAndActiveTrue(
@@ -382,12 +510,14 @@ public class BookingController {
                                 "Loại sân này chưa được cấu hình giá"
                         ));
 
-                Long totalAmount = calculateTotalAmount(
+                Long courtAmount = calculateTotalAmount(
                         courtPrice,
                         request.getStartTime(),
                         request.getEndTime()
                 );
 
+                Long totalAmount =
+                        courtAmount + shuttlecockAmount;
                 booking.setTotalAmount(totalAmount);
                 bookings.add(booking);
                         }
@@ -396,6 +526,7 @@ public class BookingController {
     }
 
     // CUSTOMER hủy booking của chính mình.
+    @Transactional
     @DeleteMapping("/{id}")
     public NormalBooking cancelBooking(
             @PathVariable Long id,
@@ -466,12 +597,17 @@ public class BookingController {
                     "Chỉ được hủy sân trước ít nhất 2 tiếng"
             );
         }
-
         booking.setStatus("CANCELLED");
+        booking.setCancelledAt(now);
+
+        // Nếu booking đang giữ cầu thì trả lại số lượng có thể đặt
+        bookingInventoryService.releaseReservation(booking);
+
         return bookingRepository.save(booking);
     }
 
     // STAFF/ADMIN hủy booking của khách tại quầy.
+    @Transactional
     @DeleteMapping("/{id}/cancel-walk-in")
     public NormalBooking cancelWalkInBooking(
             @PathVariable Long id,
@@ -558,6 +694,7 @@ public class BookingController {
     }
 
     // STAFF/ADMIN check-in booking.
+    @Transactional
     @PostMapping("/{id}/check-in")
     public NormalBooking checkInBooking(
             @PathVariable Long id,
@@ -637,6 +774,18 @@ public class BookingController {
         booking.setCheckedInAt(now);
         booking.setCheckedInBy(staff.getId());
 
+        /*
+        * Nếu booking có đặt cầu:
+        * - trừ tồn kho vật lý;
+        * - giảm số lượng đang giữ;
+        * - xuất theo FIFO;
+        * - ghi inventory_issues;
+        * - ghi inventory_issue_details.
+        *
+        * Nếu booking không đặt cầu thì method này không làm gì.
+        */
+        bookingInventoryService.issueForBooking(booking);
+
         return bookingRepository.save(booking);
     }
 
@@ -710,4 +859,6 @@ public class BookingController {
 
         return normalAmount + peakAmount;
         }
+
+        
 }

@@ -23,18 +23,25 @@ public class DailyVisitorParticipantService {
     private final DailyVisitorSessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final VisitorRepository visitorRepository;
+    private final DailyVisitorInventoryService
+        dailyVisitorInventoryService;
+    
 
-    public DailyVisitorParticipantService(
-            DailyVisitorParticipantRepository participantRepository,
-            DailyVisitorSessionRepository sessionRepository,
-            UserRepository userRepository,
-            VisitorRepository visitorRepository) {
+        public DailyVisitorParticipantService(
+                DailyVisitorParticipantRepository participantRepository,
+                DailyVisitorSessionRepository sessionRepository,
+                UserRepository userRepository,
+                VisitorRepository visitorRepository,
+                DailyVisitorInventoryService
+                        dailyVisitorInventoryService) {
 
         this.participantRepository = participantRepository;
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.visitorRepository = visitorRepository;
-    }
+        this.dailyVisitorInventoryService =
+                dailyVisitorInventoryService;
+        }
 
     // =========================================================
     // 1. CUSTOMER đăng ký online
@@ -350,12 +357,35 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        participant.setCheckedInSlots(participant.getSlotCount());
+        participant.setCheckedInSlots(
+                participant.getSlotCount()
+        );
         participant.setStatus("CHECKED_IN");
         participant.setCheckedInAt(now);
         participant.setCheckedInBy(staff.getId());
 
-        return participantRepository.save(participant);
+        DailyVisitorParticipant savedParticipant =
+                participantRepository.saveAndFlush(participant);
+
+        Long checkedInSlots =
+                participantRepository.getCheckedInSlots(
+                        session.getId()
+                );
+
+        if (checkedInSlots == null) {
+        checkedInSlots = 0L;
+        }
+
+        // Khi đủ số người tối thiểu thì xuất đúng 1 ống cầu FIFO
+        if (checkedInSlots >= session.getMinParticipants()
+                && !Boolean.TRUE.equals(
+                        session.getShuttlecockIssued())) {
+
+        dailyVisitorInventoryService
+                .issueForSession(session);
+        }
+
+        return savedParticipant;
     }
 
     // =========================================================

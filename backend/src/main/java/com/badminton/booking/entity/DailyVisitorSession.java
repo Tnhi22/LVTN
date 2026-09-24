@@ -3,6 +3,7 @@ package com.badminton.booking.entity;
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -38,15 +39,48 @@ public class DailyVisitorSession {
     @Column(name = "cancel_reason")
     private String cancelReason;
 
-    public String getCancelReason() {
-    return cancelReason;
-    }
+    // Loại cầu được sử dụng cho buổi Daily Visitor
+    @ManyToOne
+    @JoinColumn(
+            name = "shuttlecock_product_id",
+            nullable = false
+    )
+    private Product shuttlecockProduct;
 
-    public void setCancelReason(String cancelReason) {
-        this.cancelReason = cancelReason;
-    }
+    // Mỗi buổi sử dụng đúng 1 ống cầu
+    @Column(
+            name = "shuttlecock_quantity_tubes",
+            nullable = false
+    )
+    private Integer shuttlecockQuantityTubes = 1;
+
+    // Đánh dấu đã thực sự trừ kho hay chưa
+    @Column(
+            name = "shuttlecock_issued",
+            nullable = false
+    )
+    private Boolean shuttlecockIssued = false;
+
+    // Thời điểm xuất ống cầu khỏi kho
+    @Column(name = "shuttlecock_issued_at")
+    private LocalDateTime shuttlecockIssuedAt;
 
     public DailyVisitorSession() {
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (status == null) {
+            status = "OPEN";
+        }
+
+        if (shuttlecockQuantityTubes == null) {
+            shuttlecockQuantityTubes = 1;
+        }
+
+        if (shuttlecockIssued == null) {
+            shuttlecockIssued = false;
+        }
     }
 
     public Long getId() {
@@ -61,7 +95,8 @@ public class DailyVisitorSession {
         return schedule;
     }
 
-    public void setSchedule(DailyVisitorSchedule schedule) {
+    public void setSchedule(
+            DailyVisitorSchedule schedule) {
         this.schedule = schedule;
     }
 
@@ -69,7 +104,8 @@ public class DailyVisitorSession {
         return sessionDate;
     }
 
-    public void setSessionDate(LocalDate sessionDate) {
+    public void setSessionDate(
+            LocalDate sessionDate) {
         this.sessionDate = sessionDate;
     }
 
@@ -77,7 +113,8 @@ public class DailyVisitorSession {
         return startTime;
     }
 
-    public void setStartTime(LocalTime startTime) {
+    public void setStartTime(
+            LocalTime startTime) {
         this.startTime = startTime;
     }
 
@@ -85,7 +122,8 @@ public class DailyVisitorSession {
         return endTime;
     }
 
-    public void setEndTime(LocalTime endTime) {
+    public void setEndTime(
+            LocalTime endTime) {
         this.endTime = endTime;
     }
 
@@ -93,7 +131,8 @@ public class DailyVisitorSession {
         return minParticipants;
     }
 
-    public void setMinParticipants(Integer minParticipants) {
+    public void setMinParticipants(
+            Integer minParticipants) {
         this.minParticipants = minParticipants;
     }
 
@@ -101,7 +140,8 @@ public class DailyVisitorSession {
         return maxParticipants;
     }
 
-    public void setMaxParticipants(Integer maxParticipants) {
+    public void setMaxParticipants(
+            Integer maxParticipants) {
         this.maxParticipants = maxParticipants;
     }
 
@@ -111,5 +151,53 @@ public class DailyVisitorSession {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(
+            String cancelReason) {
+        this.cancelReason = cancelReason;
+    }
+
+    public Product getShuttlecockProduct() {
+        return shuttlecockProduct;
+    }
+
+    public void setShuttlecockProduct(
+            Product shuttlecockProduct) {
+        this.shuttlecockProduct = shuttlecockProduct;
+    }
+
+    public Integer getShuttlecockQuantityTubes() {
+        return shuttlecockQuantityTubes;
+    }
+
+    public void setShuttlecockQuantityTubes(
+            Integer shuttlecockQuantityTubes) {
+        this.shuttlecockQuantityTubes =
+                shuttlecockQuantityTubes;
+    }
+
+    public Boolean getShuttlecockIssued() {
+        return shuttlecockIssued;
+    }
+
+    public void setShuttlecockIssued(
+            Boolean shuttlecockIssued) {
+        this.shuttlecockIssued =
+                shuttlecockIssued;
+    }
+
+    public LocalDateTime getShuttlecockIssuedAt() {
+        return shuttlecockIssuedAt;
+    }
+
+    public void setShuttlecockIssuedAt(
+            LocalDateTime shuttlecockIssuedAt) {
+        this.shuttlecockIssuedAt =
+                shuttlecockIssuedAt;
     }
 }

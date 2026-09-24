@@ -7,6 +7,7 @@ import com.badminton.booking.dto.PhoneRegisterResponse;
 import com.badminton.booking.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+import com.badminton.booking.dto.GoogleLoginRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,5 +31,13 @@ public class AuthController {
             @Valid @RequestBody PhoneLoginRequest request) {
 
         return authService.loginByPhone(request);
+    }
+
+    @PostMapping("/login/google")
+    public AuthResponse loginByGoogle(
+            @Valid @RequestBody
+            GoogleLoginRequest request) {
+
+        return authService.loginByGoogle(request);
     }
 }

@@ -14,6 +14,7 @@ import com.badminton.booking.entity.DailyVisitorParticipant;
 import com.badminton.booking.repository.DailyVisitorSessionRepository;
 import com.badminton.booking.repository.DailyVisitorParticipantRepository;
 
+
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,7 @@ public class BookingScheduler {
     private final VisitorRepository visitorRepository;
     private final DailyVisitorSessionRepository dailyVisitorSessionRepository;
     private final DailyVisitorParticipantRepository dailyVisitorParticipantRepository;
+    private final BookingInventoryService bookingInventoryService;
 
     public BookingScheduler(
             NormalBookingRepository bookingRepository,
@@ -37,18 +39,21 @@ public class BookingScheduler {
             UserViolationRepository violationRepository,
             VisitorRepository visitorRepository,
             DailyVisitorParticipantRepository dailyVisitorParticipantRepository,
-            DailyVisitorSessionRepository dailyVisitorSessionRepository) {
+            DailyVisitorSessionRepository dailyVisitorSessionRepository,
+            BookingInventoryService bookingInventoryService) {
 
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
         this.violationRepository = violationRepository;
         this.visitorRepository = visitorRepository;
+        this.bookingInventoryService = bookingInventoryService;
 
         this.dailyVisitorParticipantRepository =
                 dailyVisitorParticipantRepository;
 
         this.dailyVisitorSessionRepository =
                 dailyVisitorSessionRepository;
+        
     }
 
     @Scheduled(fixedRate = 60000)
@@ -96,12 +101,16 @@ public class BookingScheduler {
                     || now.isBefore(finalTime)) {
                 continue;
             }
+                booking.setStatus("NO_SHOW");
 
-            // ==========================================
-            // QUÁ 30 PHÚT -> NO_SHOW -> NHẢ SÂN
-            // ==========================================
-            booking.setStatus("NO_SHOW");
-            bookingRepository.save(booking);
+                /*
+                * Khách không đến nên không xuất kho.
+                * Chỉ giải phóng số ống đã giữ để khách khác có thể mua.
+                * Tồn kho vật lý không thay đổi.
+                */
+                bookingInventoryService.releaseReservation(booking);
+
+                bookingRepository.save(booking);
 
             // ==========================================
             // 1. VISITOR - KHÁCH VÃNG LAI

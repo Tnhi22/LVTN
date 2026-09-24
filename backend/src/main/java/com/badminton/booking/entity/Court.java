@@ -1,4 +1,5 @@
 package com.badminton.booking.entity;
+import java.time.LocalDateTime;
 
 import jakarta.persistence.*;
 
@@ -21,6 +22,14 @@ public class Court {
     // Maintenance tạm thời sẽ được quản lý bởi CourtMaintenance
     @Column(nullable = false)
     private Boolean active = true;
+
+    // Chu kỳ bảo trì định kỳ, tính theo tháng
+    @Column(name = "maintenance_interval_months")
+    private Integer maintenanceIntervalMonths;
+
+    // Ngày giờ dự kiến bảo trì tiếp theo
+    @Column(name = "next_maintenance_at")
+    private LocalDateTime nextMaintenanceAt;
 
     public Court() {
     }
@@ -55,5 +64,26 @@ public class Court {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+
+    public Integer getMaintenanceIntervalMonths() {
+    return maintenanceIntervalMonths;
+    }
+
+    public void setMaintenanceIntervalMonths(
+            Integer maintenanceIntervalMonths) {
+        this.maintenanceIntervalMonths =
+                maintenanceIntervalMonths;
+    }
+
+    public LocalDateTime getNextMaintenanceAt() {
+        return nextMaintenanceAt;
+    }
+
+    public void setNextMaintenanceAt(
+            LocalDateTime nextMaintenanceAt) {
+        this.nextMaintenanceAt =
+                nextMaintenanceAt;
     }
 }

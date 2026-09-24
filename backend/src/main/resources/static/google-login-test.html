@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Google Login</title>
+
+    <script
+        src="https://accounts.google.com/gsi/client"
+        async
+        defer>
+    </script>
+</head>
+
+<body>
+    <h2>Đăng nhập Badminton Booking</h2>
+
+    <div id="g_id_onload"
+         data-client_id="959847691255-af0urgshhkrnconcpplar0g5c3g4qcvc.apps.googleusercontent.com"
+         data-callback="handleGoogleLogin"
+         data-auto_prompt="false">
+    </div>
+
+    <div class="g_id_signin"
+         data-type="standard"
+         data-size="large"
+         data-theme="outline"
+         data-text="signin_with"
+         data-shape="rectangular">
+    </div>
+
+    <h3>Kết quả backend</h3>
+
+    <pre id="result">
+Chưa đăng nhập
+    </pre>
+
+    <script>
+        async function handleGoogleLogin(response) {
+            const resultElement =
+                document.getElementById("result");
+
+            try {
+                const backendResponse = await fetch(
+                    "/api/auth/login/google",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            idToken: response.credential
+                        })
+                    }
+                );
+
+                const data =
+                    await backendResponse.json();
+
+                resultElement.textContent =
+                    JSON.stringify(data, null, 2);
+
+                if (backendResponse.ok
+                        && data.accessToken) {
+
+                    localStorage.setItem(
+                        "accessToken",
+                        data.accessToken
+                    );
+                }
+
+            } catch (error) {
+                resultElement.textContent =
+                    "Lỗi: " + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

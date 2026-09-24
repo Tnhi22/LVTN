@@ -11,6 +11,9 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.LocalDateTime;
 
@@ -105,19 +108,21 @@ public class GlobalExceptionHandler {
         );
     }
 
-    // Lỗi hệ thống chưa xác định
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
-            Exception exception,
-            HttpServletRequest request) {
+        @ExceptionHandler(Exception.class)
+        public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
+                Exception exception,
+                HttpServletRequest request) {
+
+        // In lỗi thật ra terminal để kiểm tra nguyên nhân lỗi 500
+        exception.printStackTrace();
 
         return buildResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
-                "Đã xảy ra lỗi hệ thống",
+                "Đã xảy ra lỗi hệ thống: "
+                        + exception.getMessage(),
                 request
         );
-    }
-
+        }
     private ResponseEntity<ApiErrorResponse> buildResponse(
             HttpStatus status,
             String message,
@@ -135,4 +140,89 @@ public class GlobalExceptionHandler {
                 .status(status)
                 .body(response);
     }
+                // Gửi sai Content-Type, ví dụ gửi JSON cho API multipart/form-data
+        @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+        public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(
+                HttpMediaTypeNotSupportedException exception,
+                HttpServletRequest request) {
+
+        return buildResponse(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "API này yêu cầu multipart/form-data, không nhận raw JSON",
+                request
+        );
+        }
+
+        // Thiếu file trong multipart/form-data
+        @ExceptionHandler(MissingServletRequestPartException.class)
+        public ResponseEntity<ApiErrorResponse> handleMissingRequestPart(
+                MissingServletRequestPartException exception,
+                HttpServletRequest request) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Thiếu dữ liệu multipart: "
+                        + exception.getRequestPartName(),
+                request
+        );
+        }
+
+        // File vượt quá dung lượng quy định
+        @ExceptionHandler(MaxUploadSizeExceededException.class)
+        public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(
+                MaxUploadSizeExceededException exception,
+                HttpServletRequest request) {
+
+        return buildResponse(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "Ảnh sản phẩm không được vượt quá 5 MB",
+                request
+        );
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }

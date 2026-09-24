@@ -16,7 +16,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(12);
     }
 
     @Bean
@@ -117,18 +117,55 @@ public class SecurityConfig {
                                 "/api/bookings/*"
                         ).hasRole("CUSTOMER")
 
+
+
+                        // Chỉ ADMIN được tạo sản phẩm
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/products"
+                        ).hasRole("ADMIN")
+
+                        // STAFF và ADMIN được xem sản phẩm
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/products/**"
+                        ).hasAnyRole("STAFF", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/uploads/products/**"
+                        ).permitAll()
+
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/inventory-batches"
+                        ).hasRole("ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/inventory-batches/**"
+                        ).hasAnyRole("STAFF", "ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/google-login-test.html"
+                        ).permitAll()
+
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()
                 )
 
-                .oauth2ResourceServer(oauth2 ->
-                        oauth2.jwt(jwt ->
-                                jwt.jwtAuthenticationConverter(
-                                        jwtAuthenticationConverter
+                        .oauth2ResourceServer(oauth2 ->
+                                oauth2.jwt(jwt ->
+                                        jwt.jwtAuthenticationConverter(
+                                                jwtAuthenticationConverter
+                                        )
                                 )
-                        )
-                );
+                        );
 
         return http.build();
     }
+
+
 }
