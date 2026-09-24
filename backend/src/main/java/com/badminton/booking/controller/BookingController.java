@@ -126,28 +126,38 @@ public class BookingController {
         Visitor visitor = null;
 
         if (staff == null) {
-            if (request.getUserId() == null) {
+
+        if (request.getUserId() == null) {
                 throw new BusinessException(
                         HttpStatus.UNAUTHORIZED,
                         "Không xác định được khách hàng đăng nhập"
                 );
-            }
+        }
 
-            user = userRepository.findById(request.getUserId())
-                    .orElseThrow(() -> new BusinessException(
-                            HttpStatus.NOT_FOUND,
-                            "Không tìm thấy người dùng"
-                    ));
+        user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "Không tìm thấy người dùng"
+                ));
 
-            if ("SUSPENDED".equals(user.getStatus())) {
+        // Phải xác minh số điện thoại trước khi đặt sân
+        if (!Boolean.TRUE.equals(user.getPhoneVerified())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "Vui lòng xác minh số điện thoại trước khi đặt sân"
+                );
+        }
+
+        if ("SUSPENDED".equals(user.getStatus())) {
                 throw new BusinessException(
                         HttpStatus.FORBIDDEN,
                         "Tài khoản của bạn đã bị khóa vì vi phạm nguyên tắc đặt sân. "
                                 + "Vui lòng liên hệ STAFF để biết thêm chi tiết."
                 );
-            }
+        }
 
-            if ("WARNING".equals(user.getStatus())) {
+        if ("WARNING".equals(user.getStatus())) {
+
                 List<UserViolation> warningHistories =
                         violationRepository.findWarningHistory(
                                 user.getId(),
@@ -155,54 +165,69 @@ public class BookingController {
                         );
 
                 if (warningHistories.isEmpty()) {
-                    throw new BusinessException(
-                            HttpStatus.INTERNAL_SERVER_ERROR,
-                            "Không tìm thấy lịch sử cảnh báo"
-                    );
+                throw new BusinessException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Không tìm thấy lịch sử cảnh báo"
+                );
                 }
 
-                UserViolation warningViolation = warningHistories.get(0);
+                UserViolation warningViolation =
+                        warningHistories.get(0);
+
                 LocalDateTime warningUntil =
-                        warningViolation.getCreatedAt().plusDays(2);
+                        warningViolation.getCreatedAt()
+                                .plusDays(2);
 
                 if (LocalDateTime.now().isBefore(warningUntil)) {
-                    throw new BusinessException(
-                            HttpStatus.FORBIDDEN,
-                            "Tài khoản của bạn đang bị cảnh báo do không check-in sân. "
-                                    + "Bạn bị tạm khóa quyền đặt sân trong 2 ngày. "
-                                    + "Vui lòng thử lại sau khi thời gian cảnh báo kết thúc."
-                    );
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "Tài khoản của bạn đang bị cảnh báo do không check-in sân. "
+                                + "Bạn bị tạm khóa quyền đặt sân trong 2 ngày. "
+                                + "Vui lòng thử lại sau khi thời gian cảnh báo kết thúc."
+                );
                 }
-            }
+        }
+
         } else {
-            if (request.getWalkInName() == null
-                    || request.getWalkInName().isBlank()
-                    || request.getWalkInPhone() == null
-                    || request.getWalkInPhone().isBlank()) {
+
+        if (request.getWalkInName() == null
+                || request.getWalkInName().isBlank()
+                || request.getWalkInPhone() == null
+                || request.getWalkInPhone().isBlank()) {
+
                 throw new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "Khách vãng lai phải có tên và số điện thoại"
                 );
-            }
+        }
 
-            String name = request.getWalkInName().trim();
-            String phone = request.getWalkInPhone().trim();
+        String name =
+                request.getWalkInName().trim();
 
-            visitor = visitorRepository.findByPhone(phone)
-                    .orElseGet(() -> {
-                        Visitor newVisitor = new Visitor();
+        String phone =
+                request.getWalkInPhone().trim();
+
+        visitor = visitorRepository.findByPhone(phone)
+                .orElseGet(() -> {
+
+                        Visitor newVisitor =
+                                new Visitor();
+
                         newVisitor.setFullName(name);
                         newVisitor.setPhone(phone);
                         newVisitor.setStatus("ACTIVE");
-                        return visitorRepository.save(newVisitor);
-                    });
 
-            if ("BLOCKED".equals(visitor.getStatus())) {
+                        return visitorRepository.save(
+                                newVisitor
+                        );
+                });
+
+        if ("BLOCKED".equals(visitor.getStatus())) {
                 throw new BusinessException(
                         HttpStatus.FORBIDDEN,
                         "Số điện thoại này đã bị khóa do từng không đến nhận sân"
                 );
-            }
+        }
         }
 
         List<Long> courtIds = new ArrayList<>();

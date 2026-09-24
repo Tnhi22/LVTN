@@ -79,17 +79,24 @@ public class DailyVisitorParticipantService {
                 ));
 
         if (!"CUSTOMER".equals(user.getRole())) {
-            throw new BusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "Chỉ khách hàng mới có thể tự đăng ký lượt chơi"
-            );
+        throw new BusinessException(
+                HttpStatus.FORBIDDEN,
+                "Chỉ khách hàng mới có thể tự đăng ký lượt chơi"
+        );
+        }
+
+        if (!Boolean.TRUE.equals(user.getPhoneVerified())) {
+        throw new BusinessException(
+                HttpStatus.FORBIDDEN,
+                "Vui lòng xác minh số điện thoại trước khi đăng ký chơi"
+        );
         }
 
         if ("SUSPENDED".equals(user.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "Tài khoản đã bị khóa nên không thể đăng ký lượt chơi"
-            );
+        throw new BusinessException(
+                HttpStatus.FORBIDDEN,
+                "Tài khoản đã bị khóa nên không thể đăng ký lượt chơi"
+        );
         }
 
         if (!"OPEN".equals(session.getStatus())) {
