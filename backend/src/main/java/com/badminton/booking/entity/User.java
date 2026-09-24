@@ -41,6 +41,9 @@ public class User {
     @Column(nullable = false)
     private String status = "ACTIVE";
 
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+
     public User() {
     }
 
@@ -130,5 +133,13 @@ public class User {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getAvatarUrl() {
+    return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }
