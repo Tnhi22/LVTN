@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.badminton.booking.dto.GoogleLoginRequest;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import java.nio.charset.StandardCharsets;
+import com.badminton.booking.dto.ChangePasswordRequest;
 
 import java.util.Locale;
 
@@ -373,5 +374,77 @@ public AuthService(
                 user.getPhone(),
                 user.getRole()
         );
+        }
+
+
+
+        @Transactional
+        public void changePassword(
+                Long userId,
+                ChangePasswordRequest request) {
+
+        if (request == null) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Dữ liệu đổi mật khẩu không hợp lệ"
+                );
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() ->
+                        new BusinessException(
+                                HttpStatus.NOT_FOUND,
+                                "Không tìm thấy tài khoản"
+                        )
+                );
+
+        // Tài khoản Google chưa có mật khẩu
+        if (user.getPassword() == null) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Tài khoản Google chưa thiết lập mật khẩu"
+                );
+        }
+
+        if (request.getCurrentPassword() == null
+                || !passwordEncoder.matches(
+                        request.getCurrentPassword(),
+                        user.getPassword()
+                )) {
+
+                throw new BusinessException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Mật khẩu hiện tại không đúng"
+                );
+        }
+
+        validatePassword(request.getNewPassword());
+
+        if (!request.getNewPassword()
+                .equals(request.getConfirmPassword())) {
+
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Xác nhận mật khẩu mới không khớp"
+                );
+        }
+
+        if (passwordEncoder.matches(
+                request.getNewPassword(),
+                user.getPassword()
+        )) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Mật khẩu mới phải khác mật khẩu hiện tại"
+                );
+        }
+
+        user.setPassword(
+                passwordEncoder.encode(
+                        request.getNewPassword()
+                )
+        );
+
+        userRepository.save(user);
         }
 }
