@@ -21,6 +21,9 @@ public class InventoryIssueDetail {
     @Column(name = "quantity_tubes", nullable = false)
     private Integer quantityTubes;
 
+    @Column(name = "quantity_pieces", nullable = false)
+    private Integer quantityPieces = 0;
+
     public InventoryIssueDetail() {
     }
 
@@ -50,5 +53,14 @@ public class InventoryIssueDetail {
 
     public void setQuantityTubes(Integer quantityTubes) {
         this.quantityTubes = quantityTubes;
+    }
+
+
+    public Integer getQuantityPieces() {
+    return quantityPieces;
+    }
+
+    public void setQuantityPieces(Integer quantityPieces) {
+        this.quantityPieces = quantityPieces;
     }
 }

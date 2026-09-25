@@ -78,6 +78,10 @@ public class Product {
     )
     private Integer targetStockTubes = 50;
 
+        // Giá bán một quả lẻ; null nghĩa là chưa bán lẻ theo quả
+    @Column(name = "piece_price")
+    private Long piecePrice;
+
     public Product() {
     }
 
@@ -242,5 +246,13 @@ public class Product {
 
         this.targetStockTubes =
                 targetStockTubes;
+    }
+
+    public Long getPiecePrice() {
+    return piecePrice;
+    }
+
+    public void setPiecePrice(Long piecePrice) {
+        this.piecePrice = piecePrice;
     }
 }

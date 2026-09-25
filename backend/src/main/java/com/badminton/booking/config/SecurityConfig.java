@@ -139,7 +139,8 @@ public class SecurityConfig {
 
                         .requestMatchers(
                                 HttpMethod.POST,
-                                "/api/inventory-batches"
+                                "/api/inventory-batches",
+                                "/api/inventory-batches/*/receive"
                         ).hasRole("ADMIN")
 
                         .requestMatchers(
@@ -151,6 +152,17 @@ public class SecurityConfig {
                                 HttpMethod.GET,
                                 "/google-login-test.html"
                         ).permitAll()
+
+                        .requestMatchers(HttpMethod.POST, "/api/suppliers")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/suppliers/**")
+                        .hasAnyRole("STAFF", "ADMIN")
+
+                        .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/inventory-batches/counter-sales/pieces"
+                        ).hasAnyRole("STAFF", "ADMIN")
 
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()

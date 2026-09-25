@@ -58,6 +58,9 @@ public class InventoryIssue {
     @Column(name = "issued_at", nullable = false)
     private LocalDateTime issuedAt;
 
+    @Column(name = "quantity_pieces", nullable = false)
+    private Integer quantityPieces = 0;
+
     public InventoryIssue() {
     }
 
@@ -135,4 +138,12 @@ public class InventoryIssue {
     public void setIssuedAt(LocalDateTime issuedAt) {
         this.issuedAt = issuedAt;
     }
-}
+
+    public Integer getQuantityPieces() {
+    return quantityPieces;
+    }
+
+    public void setQuantityPieces(Integer quantityPieces) {
+        this.quantityPieces = quantityPieces;
+    }
+    }

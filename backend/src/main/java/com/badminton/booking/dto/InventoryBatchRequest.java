@@ -8,6 +8,7 @@ public class InventoryBatchRequest {
     private Integer quantityTubes;
     private Long importPricePerTube;
     private LocalDateTime receivedAt;
+    private Long supplierId;
 
     public InventoryBatchRequest() {
     }
@@ -46,5 +47,14 @@ public class InventoryBatchRequest {
     public void setReceivedAt(
             LocalDateTime receivedAt) {
         this.receivedAt = receivedAt;
+    }
+
+
+    public Long getSupplierId() {
+    return supplierId;
+    }
+
+    public void setSupplierId(Long supplierId) {
+        this.supplierId = supplierId;
     }
 }

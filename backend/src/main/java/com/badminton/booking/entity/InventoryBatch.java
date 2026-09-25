@@ -53,26 +53,42 @@ public class InventoryBatch {
     private Long importPricePerTube;
 
     // Thời điểm hàng thực tế được nhập kho
-    @Column(name = "received_at", nullable = false)
+    @Column(name = "received_at")
     private LocalDateTime receivedAt;
 
     // Thời điểm dữ liệu được tạo trong hệ thống
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @ManyToOne
+    @JoinColumn(name = "supplier_id")
+    private Supplier supplier;
+
+    @Column(name = "quantity_ordered_tubes")
+    private Integer quantityOrderedTubes;
+
+    // null ở các lô cũ được hiểu là đã nhận hàng
+    private String status;
+
+    // Số quả còn trong ống đã mở của lô này
+    @Column(name = "loose_pieces_remaining", nullable = false)
+    private Integer loosePiecesRemaining = 0;
+
+    public Integer getLoosePiecesRemaining() {
+        return loosePiecesRemaining;
+    }
+
+    public void setLoosePiecesRemaining(Integer loosePiecesRemaining) {
+        this.loosePiecesRemaining = loosePiecesRemaining;
+    }
+
     public InventoryBatch() {
     }
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-
-        if (receivedAt == null) {
-            receivedAt = now;
-        }
-
         if (createdAt == null) {
-            createdAt = now;
+            createdAt = LocalDateTime.now();
         }
     }
 
@@ -136,5 +152,30 @@ public class InventoryBatch {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+
+    public Supplier getSupplier() {
+    return supplier;
+    }
+
+    public void setSupplier(Supplier supplier) {
+        this.supplier = supplier;
+    }
+
+    public Integer getQuantityOrderedTubes() {
+        return quantityOrderedTubes;
+    }
+
+    public void setQuantityOrderedTubes(Integer quantityOrderedTubes) {
+        this.quantityOrderedTubes = quantityOrderedTubes;
+    }
+
+    public String getStatus() {
+        return status == null ? "RECEIVED" : status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }

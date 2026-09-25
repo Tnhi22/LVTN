@@ -6,7 +6,7 @@ import com.badminton.booking.entity.InventoryBatch;
 import com.badminton.booking.entity.InventoryIssue;
 import com.badminton.booking.repository.InventoryBatchRepository;
 import com.badminton.booking.service.InventoryService;
-
+import com.badminton.booking.dto.LoosePieceSaleRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -56,4 +56,18 @@ public class InventoryController {
                         productId
                 );
     }
+
+    @PostMapping("/{id}/receive")
+        public InventoryBatch receiveBatch(@PathVariable Long id) {
+        return inventoryService.receiveBatch(id);
+        }
+
+
+
+        @PostMapping("/counter-sales/pieces")
+        public InventoryIssue sellLoosePieces(
+                @RequestBody LoosePieceSaleRequest request) {
+
+        return inventoryService.sellLoosePieces(request);
+        }
 }

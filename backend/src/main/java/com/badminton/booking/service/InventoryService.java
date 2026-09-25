@@ -11,10 +11,12 @@ import com.badminton.booking.repository.InventoryBatchRepository;
 import com.badminton.booking.repository.InventoryIssueDetailRepository;
 import com.badminton.booking.repository.InventoryIssueRepository;
 import com.badminton.booking.repository.ProductRepository;
-
+import com.badminton.booking.dto.LoosePieceSaleRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.badminton.booking.entity.Supplier;
+import com.badminton.booking.repository.SupplierRepository;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -29,111 +31,99 @@ public class InventoryService {
     private final InventoryIssueRepository inventoryIssueRepository;
     private final InventoryIssueDetailRepository
             inventoryIssueDetailRepository;
+        private final SupplierRepository supplierRepository;
 
-    public InventoryService(
-            ProductRepository productRepository,
-            InventoryBatchRepository inventoryBatchRepository,
-            InventoryIssueRepository inventoryIssueRepository,
-            InventoryIssueDetailRepository
-                    inventoryIssueDetailRepository) {
+        public InventoryService(
+                ProductRepository productRepository,
+                SupplierRepository supplierRepository,
+                InventoryBatchRepository inventoryBatchRepository,
+                InventoryIssueRepository inventoryIssueRepository,
+                InventoryIssueDetailRepository inventoryIssueDetailRepository) {
 
         this.productRepository = productRepository;
-        this.inventoryBatchRepository =
-                inventoryBatchRepository;
-        this.inventoryIssueRepository =
-                inventoryIssueRepository;
-        this.inventoryIssueDetailRepository =
-                inventoryIssueDetailRepository;
-    }
-
-    // =====================================================
-    // NHẬP MỘT LÔ HÀNG MỚI
-    // =====================================================
-    @Transactional
-    public InventoryBatch importBatch(
-            InventoryBatchRequest request) {
-
-        if (request.getProductId() == null) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Vui lòng chọn sản phẩm"
-            );
+        this.supplierRepository = supplierRepository;
+        this.inventoryBatchRepository = inventoryBatchRepository;
+        this.inventoryIssueRepository = inventoryIssueRepository;
+        this.inventoryIssueDetailRepository = inventoryIssueDetailRepository;
         }
 
-        if (request.getQuantityTubes() == null
-                || request.getQuantityTubes() <= 0) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Số lượng nhập phải lớn hơn 0"
-            );
-        }
-
-        if (request.getImportPricePerTube() == null
+        // =====================================================
+        // NHẬP MỘT LÔ HÀNG MỚI
+        // =====================================================
+        @Transactional
+        public InventoryBatch importBatch(InventoryBatchRequest request) {
+        if (request == null
+                || request.getProductId() == null
+                || request.getSupplierId() == null
+                || request.getQuantityTubes() == null
+                || request.getQuantityTubes() <= 0
+                || request.getImportPricePerTube() == null
                 || request.getImportPricePerTube() <= 0) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Giá nhập một ống phải lớn hơn 0"
-            );
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "Thiếu sản phẩm, nhà cung cấp, số lượng hoặc giá nhập"
+                );
         }
 
-        Product product = productRepository
-                .findById(request.getProductId())
+        Product product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND,
                         "Không tìm thấy sản phẩm"
                 ));
 
-        LocalDateTime receivedAt =
-                request.getReceivedAt();
-
-        if (receivedAt == null) {
-            receivedAt = LocalDateTime.now();
-        }
-
-        if (receivedAt.isAfter(LocalDateTime.now())) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Ngày giờ nhập không được ở tương lai"
-            );
-        }
+        Supplier supplier = supplierRepository.findById(request.getSupplierId())
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "Không tìm thấy nhà cung cấp"
+                ));
 
         InventoryBatch batch = new InventoryBatch();
-
         batch.setBatchCode(
-                generateBatchCode(
-                        product.getId(),
-                        receivedAt
-                )
+                generateBatchCode(product.getId(), LocalDateTime.now())
         );
-
         batch.setProduct(product);
-        batch.setQuantityReceivedTubes(
-                request.getQuantityTubes()
-        );
-        batch.setQuantityRemainingTubes(
-                request.getQuantityTubes()
-        );
-        batch.setImportPricePerTube(
-                request.getImportPricePerTube()
-        );
-        batch.setReceivedAt(receivedAt);
+        batch.setSupplier(supplier);
+        batch.setQuantityOrderedTubes(request.getQuantityTubes());
+        batch.setQuantityReceivedTubes(0);
+        batch.setQuantityRemainingTubes(0);
+        batch.setImportPricePerTube(request.getImportPricePerTube());
+        batch.setStatus("PENDING");
 
-        Integer currentStock =
-                product.getStockQuantityTubes();
-
-        if (currentStock == null) {
-            currentStock = 0;
+        // Chưa nhận hàng: không cộng vào products.stockQuantityTubes.
+        return inventoryBatchRepository.save(batch);
         }
 
-        product.setStockQuantityTubes(
-                currentStock
-                        + request.getQuantityTubes()
-        );
+        @Transactional
+        public InventoryBatch receiveBatch(Long batchId) {
+        InventoryBatch batch = inventoryBatchRepository.findForUpdate(batchId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "Không tìm thấy lô nhập"
+                ));
 
+        if (!"PENDING".equals(batch.getStatus())) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Lô hàng đã được nhận trước đó"
+                );
+        }
+
+        Product product = batch.getProduct();
+        int quantity = batch.getQuantityOrderedTubes();
+        int currentStock = product.getStockQuantityTubes() == null
+                ? 0
+                : product.getStockQuantityTubes();
+
+        batch.setQuantityReceivedTubes(quantity);
+        batch.setQuantityRemainingTubes(quantity);
+        batch.setReceivedAt(LocalDateTime.now());
+        batch.setStatus("RECEIVED");
+
+        product.setStockQuantityTubes(currentStock + quantity);
         productRepository.save(product);
 
         return inventoryBatchRepository.save(batch);
-    }
+        }
 
     // =====================================================
     // BÁN TẠI QUẦY VÀ TRỪ KHO THEO FIFO
@@ -367,4 +357,147 @@ public class InventoryService {
                 + "-"
                 + randomPart;
     }
+
+
+
+
+        @Transactional
+        public InventoryIssue sellLoosePieces(LoosePieceSaleRequest request) {
+        if (request.getProductId() == null) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST, "Vui lòng chọn sản phẩm");
+        }
+
+        if (request.getQuantityPieces() == null
+                || request.getQuantityPieces() <= 0) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST, "Số quả bán phải lớn hơn 0");
+        }
+
+        Product product = productRepository
+                .findByIdForUpdate(request.getProductId())
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "Không tìm thấy sản phẩm"));
+
+        Long piecePrice = product.getPiecePrice();
+        if (piecePrice == null || piecePrice <= 0) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Sản phẩm này không bán lẻ theo quả");
+        }
+
+        Integer piecesPerTube = product.getPiecesPerTube();
+        if (piecesPerTube == null || piecesPerTube <= 0) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Số quả trong một ống không hợp lệ");
+        }
+
+        // Danh sách lô theo FIFO. Lô PENDING không được dùng để bán.
+        List<InventoryBatch> batches = inventoryBatchRepository
+                .findByProductIdOrderByReceivedAtAscIdAsc(product.getId())
+                .stream()
+                .filter(batch -> "RECEIVED".equals(batch.getStatus()))
+                .toList();
+
+        int looseAvailable = batches.stream()
+                .mapToInt(batch -> batch.getLoosePiecesRemaining() == null
+                        ? 0 : batch.getLoosePiecesRemaining())
+                .sum();
+
+        int stock = product.getStockQuantityTubes() == null
+                ? 0 : product.getStockQuantityTubes();
+        int reserved = product.getReservedQuantityTubes() == null
+                ? 0 : product.getReservedQuantityTubes();
+
+        int missingPieces = Math.max(
+                0, request.getQuantityPieces() - looseAvailable);
+        int tubesToOpen = (int) (
+                ((long) missingPieces + piecesPerTube - 1) / piecesPerTube);
+
+        if (stock - reserved < tubesToOpen) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Không đủ quả lẻ và ống nguyên có thể mở");
+        }
+
+        int batchTubes = batches.stream()
+                .mapToInt(batch -> batch.getQuantityRemainingTubes() == null
+                        ? 0 : batch.getQuantityRemainingTubes())
+                .sum();
+
+        if (batchTubes < tubesToOpen) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Tồn kho sản phẩm không khớp tồn kho theo lô");
+        }
+
+        InventoryIssue issue = new InventoryIssue();
+        issue.setIssueCode(generateIssueCode());
+        issue.setProduct(product);
+        issue.setIssueType("COUNTER_SALE_PIECE");
+        issue.setReferenceId(null);
+        issue.setQuantityTubes(0);
+        issue.setQuantityPieces(request.getQuantityPieces());
+        issue.setUnitPrice(piecePrice);
+        issue.setTotalAmount(piecePrice * request.getQuantityPieces());
+        issue.setIssuedAt(LocalDateTime.now());
+        issue = inventoryIssueRepository.save(issue);
+
+        int remaining = request.getQuantityPieces();
+        int openedTubes = 0;
+
+        // Dùng hết quả trong các ống đã mở trước.
+        for (InventoryBatch batch : batches) {
+                if (remaining == 0) break;
+
+                int loose = batch.getLoosePiecesRemaining() == null
+                        ? 0 : batch.getLoosePiecesRemaining();
+                int taken = Math.min(loose, remaining);
+                if (taken == 0) continue;
+
+                batch.setLoosePiecesRemaining(loose - taken);
+                InventoryIssueDetail detail = new InventoryIssueDetail();
+                detail.setIssue(issue);
+                detail.setBatch(batch);
+                detail.setQuantityTubes(0);
+                detail.setQuantityPieces(taken);
+                inventoryIssueDetailRepository.save(detail);
+                remaining -= taken;
+        }
+
+        // Nếu còn thiếu, mở từng ống từ lô cũ nhất còn ống nguyên.
+        for (InventoryBatch batch : batches) {
+                while (remaining > 0
+                        && batch.getQuantityRemainingTubes() != null
+                        && batch.getQuantityRemainingTubes() > 0) {
+
+                batch.setQuantityRemainingTubes(
+                        batch.getQuantityRemainingTubes() - 1);
+                openedTubes++;
+
+                int taken = Math.min(piecesPerTube, remaining);
+                batch.setLoosePiecesRemaining(piecesPerTube - taken);
+
+                InventoryIssueDetail detail = new InventoryIssueDetail();
+                detail.setIssue(issue);
+                detail.setBatch(batch);
+                detail.setQuantityTubes(0);
+                detail.setQuantityPieces(taken);
+                inventoryIssueDetailRepository.save(detail);
+                remaining -= taken;
+                }
+                if (remaining == 0) break;
+        }
+
+        if (remaining > 0) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Không thể bán đủ số quả theo FIFO");
+        }
+
+        product.setStockQuantityTubes(stock - openedTubes);
+        productRepository.save(product);
+        return issue;
+        }
 }
