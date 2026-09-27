@@ -120,6 +120,18 @@ public class NormalBooking {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
+    @Column(name = "completed_by")
+    private Long completedBy;
+
+    @Column(name = "payment_method")
+    private String paymentMethod;
+
+    @Column(name = "amount_received")
+    private Long amountReceived;
+
     // =====================================================
     // KHIẾU NẠI
     // =====================================================
@@ -404,5 +416,40 @@ public class NormalBooking {
 
         this.complaintResolvedBy =
                 complaintResolvedBy;
+    }
+
+
+
+
+    public LocalDateTime getCompletedAt() {
+    return completedAt;
+    }
+
+    public void setCompletedAt(LocalDateTime completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public Long getCompletedBy() {
+        return completedBy;
+    }
+
+    public void setCompletedBy(Long completedBy) {
+        this.completedBy = completedBy;
+    }
+
+    public String getPaymentMethod() {
+        return paymentMethod;
+    }
+
+    public void setPaymentMethod(String paymentMethod) {
+        this.paymentMethod = paymentMethod;
+    }
+
+    public Long getAmountReceived() {
+        return amountReceived;
+    }
+
+    public void setAmountReceived(Long amountReceived) {
+        this.amountReceived = amountReceived;
     }
 }

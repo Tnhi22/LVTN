@@ -27,6 +27,9 @@ import com.badminton.booking.service.BookingInventoryService;
 import org.springframework.transaction.annotation.Transactional;
 import com.badminton.booking.entity.Product;
 import com.badminton.booking.repository.CourtMaintenanceRepository;
+import com.badminton.booking.dto.BookingReceipt;
+import com.badminton.booking.dto.SettlementRequest;
+import com.badminton.booking.service.BookingSettlementService;
 
 import com.badminton.booking.entity.CourtPrice;
 import com.badminton.booking.repository.CourtPriceRepository;
@@ -51,6 +54,7 @@ public class BookingController {
     private final CourtPriceRepository courtPriceRepository;
     private final BookingInventoryService bookingInventoryService;
     private final CourtMaintenanceRepository courtMaintenanceRepository;
+    private final BookingSettlementService settlementService;
 
         public BookingController(
                 NormalBookingRepository bookingRepository,
@@ -60,7 +64,8 @@ public class BookingController {
                 UserViolationRepository violationRepository,
                 VisitorRepository visitorRepository,
                 CourtPriceRepository courtPriceRepository,
-                BookingInventoryService bookingInventoryService) {
+                BookingInventoryService bookingInventoryService,
+                BookingSettlementService settlementService) {
 
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
@@ -70,6 +75,7 @@ public class BookingController {
         this.visitorRepository = visitorRepository;
         this.courtPriceRepository = courtPriceRepository;
         this.bookingInventoryService = bookingInventoryService;
+        this.settlementService = settlementService;
         }
 
     // CUSTOMER tự đặt sân. userId luôn được lấy từ JWT.
@@ -885,5 +891,24 @@ public class BookingController {
         return normalAmount + peakAmount;
         }
 
+
+
+        @GetMapping("/{id}/receipt")
+        public BookingReceipt previewReceipt(@PathVariable Long id) {
+        return settlementService.preview(id);
+        }
+
+        @PostMapping("/{id}/settle")
+        public BookingReceipt settleBooking(
+                @PathVariable Long id,
+                @RequestBody SettlementRequest request,
+                @AuthenticationPrincipal Jwt jwt
+        ) {
+        return settlementService.settle(
+                id,
+                request,
+                Long.valueOf(jwt.getSubject())
+        );
+        }
         
 }

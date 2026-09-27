@@ -87,6 +87,16 @@ public class DailyVisitorSessionService {
                     new DailyVisitorSession();
 
             session.setSchedule(schedule);
+            if (schedule.getFixedFee() == null
+                        || schedule.getFixedFee() <= 0) {
+                throw new IllegalStateException(
+                        "Lịch Daily Visitor ID "
+                                + schedule.getId()
+                                + " chưa có giá hợp lệ"
+                );
+                }
+
+                session.setFixedFeeSnapshot(schedule.getFixedFee());
             session.setSessionDate(date);
             session.setStartTime(
                     schedule.getStartTime()

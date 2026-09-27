@@ -49,6 +49,50 @@ public class DailyVisitorParticipant {
     @Column(name = "checked_in_slots", nullable = false)
     private Integer checkedInSlots = 0;
 
+    @Column(name = "amount_due")
+    private Long amountDue;
+
+    @Column(name = "amount_paid")
+    private Long amountPaid;
+
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "paid_by")
+    private Long paidBy;
+
+    public Long getAmountDue() {
+        return amountDue;
+    }
+
+    public void setAmountDue(Long amountDue) {
+        this.amountDue = amountDue;
+    }
+
+    public Long getAmountPaid() {
+        return amountPaid;
+    }
+
+    public void setAmountPaid(Long amountPaid) {
+        this.amountPaid = amountPaid;
+    }
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
+    }
+
+    public Long getPaidBy() {
+        return paidBy;
+    }
+
+    public void setPaidBy(Long paidBy) {
+        this.paidBy = paidBy;
+    }
+
     public Integer getCheckedInSlots() {
     return checkedInSlots;
     }

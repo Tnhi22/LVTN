@@ -23,8 +23,11 @@ public class DailyVisitorParticipantService {
     private final DailyVisitorSessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final VisitorRepository visitorRepository;
+    private final DailyVisitorPaymentService paymentService;
     private final DailyVisitorInventoryService
         dailyVisitorInventoryService;
+
+
     
 
         public DailyVisitorParticipantService(
@@ -33,7 +36,8 @@ public class DailyVisitorParticipantService {
                 UserRepository userRepository,
                 VisitorRepository visitorRepository,
                 DailyVisitorInventoryService
-                        dailyVisitorInventoryService) {
+                        dailyVisitorInventoryService,
+                DailyVisitorPaymentService paymentService) {
 
         this.participantRepository = participantRepository;
         this.sessionRepository = sessionRepository;
@@ -41,6 +45,7 @@ public class DailyVisitorParticipantService {
         this.visitorRepository = visitorRepository;
         this.dailyVisitorInventoryService =
                 dailyVisitorInventoryService;
+        this.paymentService = paymentService;
         }
 
     // =========================================================
@@ -177,6 +182,17 @@ public class DailyVisitorParticipantService {
                         HttpStatus.NOT_FOUND,
                         "Không tìm thấy lượt chơi"
                 ));
+                LocalDateTime sessionStart = LocalDateTime.of(
+                session.getSessionDate(),
+                session.getStartTime()
+                );
+
+                if (!LocalDateTime.now().isBefore(sessionStart)) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Buổi chơi đã bắt đầu, không thể đăng ký thêm"
+                );
+                }
 
         if (!"OPEN".equals(session.getStatus())) {
             throw new BusinessException(
@@ -284,6 +300,10 @@ public class DailyVisitorParticipantService {
                                 HttpStatus.NOT_FOUND,
                                 "Không tìm thấy người đăng ký"
                         ));
+        DailyVisitorSession lockedSession =
+                paymentService.lockSession(
+                        participant.getSession().getId()
+                );
 
         User staff = userRepository.findById(staffId)
                 .orElseThrow(() -> new BusinessException(
@@ -327,7 +347,7 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        DailyVisitorSession session = participant.getSession();
+        DailyVisitorSession session = lockedSession;
         if (session == null) {
             throw new BusinessException(
                     HttpStatus.NOT_FOUND,
@@ -391,7 +411,11 @@ public class DailyVisitorParticipantService {
         dailyVisitorInventoryService
                 .issueForSession(session);
         }
-
+        paymentService.collectAtCheckIn(
+        savedParticipant,
+        session,
+        staff.getId()
+        );
         return savedParticipant;
     }
 

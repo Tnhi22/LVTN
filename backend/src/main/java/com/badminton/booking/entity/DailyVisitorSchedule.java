@@ -34,6 +34,9 @@ public class DailyVisitorSchedule {
     @Column(nullable = false)
     private Boolean active = true;
 
+    @Column(name = "fixed_fee")
+    private Long fixedFee;
+
     public DailyVisitorSchedule() {
     }
 
@@ -99,5 +102,13 @@ public class DailyVisitorSchedule {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public Long getFixedFee() {
+    return fixedFee;
+    }
+
+    public void setFixedFee(Long fixedFee) {
+        this.fixedFee = fixedFee;
     }
 }

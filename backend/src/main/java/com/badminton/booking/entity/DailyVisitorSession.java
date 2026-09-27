@@ -65,6 +65,72 @@ public class DailyVisitorSession {
     @Column(name = "shuttlecock_issued_at")
     private LocalDateTime shuttlecockIssuedAt;
 
+
+    @Column(name = "fee_total_amount")
+    private Long feeTotalAmount;
+
+    @Column(name = "fee_slot_count")
+    private Integer feeSlotCount;
+
+    @Column(name = "fee_locked_at")
+    private LocalDateTime feeLockedAt;
+
+    @Column(name = "fee_base_amount")
+    private Long feeBaseAmount;
+
+    @Column(name = "fee_per_slot")
+    private Long feePerSlot;
+
+    @Column(name = "fixed_fee_snapshot")
+    private Long fixedFeeSnapshot;
+
+    public Long getFixedFeeSnapshot() {
+        return fixedFeeSnapshot;
+    }
+
+    public void setFixedFeeSnapshot(Long fixedFeeSnapshot) {
+        this.fixedFeeSnapshot = fixedFeeSnapshot;
+    }
+
+    public Long getFeeBaseAmount() {
+        return feeBaseAmount;
+    }
+
+    public void setFeeBaseAmount(Long feeBaseAmount) {
+        this.feeBaseAmount = feeBaseAmount;
+    }
+
+    public Long getFeePerSlot() {
+        return feePerSlot;
+    }
+
+    public void setFeePerSlot(Long feePerSlot) {
+        this.feePerSlot = feePerSlot;
+    }
+
+    public Long getFeeTotalAmount() {
+        return feeTotalAmount;
+    }
+
+    public void setFeeTotalAmount(Long feeTotalAmount) {
+        this.feeTotalAmount = feeTotalAmount;
+    }
+
+    public Integer getFeeSlotCount() {
+        return feeSlotCount;
+    }
+
+    public void setFeeSlotCount(Integer feeSlotCount) {
+        this.feeSlotCount = feeSlotCount;
+    }
+
+    public LocalDateTime getFeeLockedAt() {
+        return feeLockedAt;
+    }
+
+    public void setFeeLockedAt(LocalDateTime feeLockedAt) {
+        this.feeLockedAt = feeLockedAt;
+    }
     public DailyVisitorSession() {
     }
 

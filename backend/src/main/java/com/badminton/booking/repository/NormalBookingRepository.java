@@ -4,7 +4,9 @@ import com.badminton.booking.entity.NormalBooking;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import java.util.Optional;
 import java.time.LocalDateTime;
 
 import java.time.LocalDate;
@@ -75,5 +77,12 @@ public interface NormalBookingRepository
                 @Param("courtId") Long courtId,
                 @Param("startTime") LocalDateTime startTime,
                 @Param("endTime") LocalDateTime endTime
+        );
+
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("select b from NormalBooking b where b.id = :id")
+        Optional<NormalBooking> findByIdForSettlement(
+                @Param("id") Long id
         );
 }

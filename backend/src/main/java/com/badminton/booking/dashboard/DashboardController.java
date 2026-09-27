@@ -1,4 +1,4 @@
-package com.badminton.booking.controller;
+package com.badminton.booking.dashboard;
 
 import com.badminton.booking.dto.InventoryDashboardItem;
 import com.badminton.booking.entity.User;

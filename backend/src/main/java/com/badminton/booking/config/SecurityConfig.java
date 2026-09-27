@@ -164,6 +164,17 @@ public class SecurityConfig {
                         "/api/inventory-batches/counter-sales/pieces"
                         ).hasAnyRole("STAFF", "ADMIN")
 
+                        // Chỉ ADMIN được xem và sửa bảng giá
+                        .requestMatchers("/api/admin/prices/**").hasRole("ADMIN")
+
+                        .requestMatchers("/api/dashboard/staff-cash/**")
+                        .hasAnyRole("STAFF", "ADMIN")
+
+                        .requestMatchers("/api/admin/users/**").hasRole("ADMIN")
+
+                        .requestMatchers("/api/admin/staff-performance/**")
+                        .hasRole("ADMIN")
+
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()
                 )
