@@ -256,6 +256,15 @@ public class DashboardService {
             }
         }
 
+        for (NormalBooking paid :
+        normalBookingRepository.findByPaidAtGreaterThanEqualAndPaidAtLessThan(
+                today.atStartOfDay(),
+                today.plusDays(1).atStartOfDay())) {
+        if (paid.getTotalAmount() != null) {
+                normalBookingRevenue += paid.getTotalAmount();
+        }
+        }
+
         List<DailyVisitorSession> sessions =
                 dailyVisitorSessionRepository
                         .findBySessionDate(today);

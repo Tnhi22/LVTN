@@ -41,7 +41,11 @@ public interface NormalBookingRepository
     );
 
     List<NormalBooking> findByBookingDate(
-        LocalDate bookingDate
+                LocalDate bookingDate
+                );
+        List<NormalBooking> findByPaidAtGreaterThanEqualAndPaidAtLessThan(
+                LocalDateTime start,
+                LocalDateTime end
         );
 
                 /*
