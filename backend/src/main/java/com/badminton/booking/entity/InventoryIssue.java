@@ -61,6 +61,22 @@ public class InventoryIssue {
     @Column(name = "quantity_pieces", nullable = false)
     private Integer quantityPieces = 0;
 
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancelled_by")
+    private Long cancelledBy;
+
+    @Column(name = "cancel_reason", length = 500)
+    private String cancelReason;
+
+    public LocalDateTime getCancelledAt() { return cancelledAt; }
+    public void setCancelledAt(LocalDateTime value) { cancelledAt = value; }
+    public Long getCancelledBy() { return cancelledBy; }
+    public void setCancelledBy(Long value) { cancelledBy = value; }
+    public String getCancelReason() { return cancelReason; }
+    public void setCancelReason(String value) { cancelReason = value; }
+
     public InventoryIssue() {
     }
 

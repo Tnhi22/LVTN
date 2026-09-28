@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.badminton.booking.service.BookingInventoryService;
+import com.badminton.booking.service.BookingBillService;
+import com.badminton.booking.dto.BookingAddItemRequest;
 import org.springframework.transaction.annotation.Transactional;
 import com.badminton.booking.entity.Product;
 import com.badminton.booking.repository.CourtMaintenanceRepository;
@@ -55,6 +57,7 @@ public class BookingController {
     private final BookingInventoryService bookingInventoryService;
     private final CourtMaintenanceRepository courtMaintenanceRepository;
     private final BookingSettlementService settlementService;
+    private final BookingBillService bookingBillService;
 
         public BookingController(
                 NormalBookingRepository bookingRepository,
@@ -65,7 +68,8 @@ public class BookingController {
                 VisitorRepository visitorRepository,
                 CourtPriceRepository courtPriceRepository,
                 BookingInventoryService bookingInventoryService,
-                BookingSettlementService settlementService) {
+                BookingSettlementService settlementService,
+                BookingBillService bookingBillService) {
 
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
@@ -76,6 +80,7 @@ public class BookingController {
         this.courtPriceRepository = courtPriceRepository;
         this.bookingInventoryService = bookingInventoryService;
         this.settlementService = settlementService;
+        this.bookingBillService = bookingBillService;
         }
 
     // CUSTOMER tự đặt sân. userId luôn được lấy từ JWT.
@@ -893,6 +898,20 @@ public class BookingController {
 
 
 
+        @PostMapping("/{id}/items")
+        public BookingReceipt addBillItem(@PathVariable Long id,
+                                          @RequestBody BookingAddItemRequest request) {
+            return bookingBillService.addItem(id, request);
+        }
+
+        @PostMapping("/{id}/items/{issueId}/cancel")
+        public BookingReceipt cancelBillItem(@PathVariable Long id,
+                                             @PathVariable Long issueId,
+                                             @AuthenticationPrincipal Jwt jwt) {
+            return bookingBillService.cancelItem(
+                    id, issueId, Long.valueOf(jwt.getSubject()));
+        }
+
         @GetMapping("/{id}/receipt")
         public BookingReceipt previewReceipt(@PathVariable Long id) {
         return settlementService.preview(id);
@@ -911,4 +930,15 @@ public class BookingController {
         );
         }
         
+
+        @PostMapping("/{id}/complete")
+        public BookingReceipt completeBooking(
+                @PathVariable Long id,
+                @AuthenticationPrincipal Jwt jwt) {
+
+        return settlementService.complete(
+                id,
+                Long.valueOf(jwt.getSubject())
+        );
+        }
 }

@@ -93,6 +93,10 @@ public class SecurityConfig {
                                 HttpMethod.POST,
                                 "/api/bookings/*/check-in",
                                 "/api/bookings/walk-in",
+                                "/api/bookings/*/complete",
+                                "/api/bookings/*/items",
+                                "/api/bookings/*/items/*/cancel",
+                                "/api/bookings/*/settle",
                                 "/api/daily-visitor-participants/register-walk-in",
                                 "/api/daily-visitor-participants/*/check-in"
                         ).hasAnyRole("STAFF", "ADMIN")

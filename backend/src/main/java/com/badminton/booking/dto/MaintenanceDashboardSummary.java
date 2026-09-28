@@ -16,6 +16,7 @@ public class MaintenanceDashboardSummary {
     private List<MaintenanceDashboardItem>
             periodicMaintenanceAlerts;
 
+
     public MaintenanceDashboardSummary() {
     }
 

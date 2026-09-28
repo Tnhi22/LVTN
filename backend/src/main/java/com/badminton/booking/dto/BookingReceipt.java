@@ -1,6 +1,7 @@
 package com.badminton.booking.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record BookingReceipt(
         Long bookingId,
@@ -12,5 +13,6 @@ public record BookingReceipt(
         Long amountReceived,
         Long changeAmount,
         LocalDateTime completedAt,
-        Long completedBy
+        Long completedBy,
+        List<BookingBillItem> items
 ) {}

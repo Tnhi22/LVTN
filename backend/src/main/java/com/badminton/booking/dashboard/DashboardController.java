@@ -4,7 +4,6 @@ import com.badminton.booking.dto.InventoryDashboardItem;
 import com.badminton.booking.entity.User;
 import com.badminton.booking.exception.BusinessException;
 import com.badminton.booking.repository.UserRepository;
-import com.badminton.booking.service.DashboardService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,7 +29,7 @@ public class DashboardController {
         this.userRepository = userRepository;
     }
 
-    // STAFF và ADMIN xem tổng quan kho hàng
+    // STAFF vÃ  ADMIN xem tá»•ng quan kho hÃ ng
     @GetMapping("/inventory")
     public List<InventoryDashboardItem>
     getInventoryDashboard(
@@ -39,7 +38,7 @@ public class DashboardController {
         if (jwt == null) {
             throw new BusinessException(
                     HttpStatus.UNAUTHORIZED,
-                    "Vui lòng đăng nhập"
+                    "Vui lÃ²ng Ä‘Äƒng nháº­p"
             );
         }
 
@@ -50,7 +49,7 @@ public class DashboardController {
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
-                                "Không tìm thấy tài khoản"
+                                "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n"
                         )
                 );
 
@@ -61,7 +60,7 @@ public class DashboardController {
 
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
-                    "Chỉ STAFF hoặc ADMIN được xem kho"
+                    "Chá»‰ STAFF hoáº·c ADMIN Ä‘Æ°á»£c xem kho"
             );
         }
 
@@ -78,7 +77,7 @@ public class DashboardController {
         if (jwt == null) {
             throw new BusinessException(
                     HttpStatus.UNAUTHORIZED,
-                    "Vui lòng đăng nhập"
+                    "Vui lÃ²ng Ä‘Äƒng nháº­p"
             );
         }
 
@@ -89,7 +88,7 @@ public class DashboardController {
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
-                                "Không tìm thấy tài khoản"
+                                "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n"
                         )
                 );
 
@@ -100,7 +99,7 @@ public class DashboardController {
 
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
-                    "Chỉ STAFF hoặc ADMIN được xem kho"
+                    "Chá»‰ STAFF hoáº·c ADMIN Ä‘Æ°á»£c xem kho"
             );
         }
 
@@ -115,7 +114,7 @@ public class DashboardController {
         if (jwt == null) {
             throw new BusinessException(
                     HttpStatus.UNAUTHORIZED,
-                    "Vui lòng đăng nhập"
+                    "Vui lÃ²ng Ä‘Äƒng nháº­p"
             );
         }
 
@@ -126,7 +125,7 @@ public class DashboardController {
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
-                                "Không tìm thấy tài khoản"
+                                "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n"
                         )
                 );
 
@@ -137,7 +136,7 @@ public class DashboardController {
 
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
-                    "Chỉ STAFF hoặc ADMIN được xem dashboard"
+                    "Chá»‰ STAFF hoáº·c ADMIN Ä‘Æ°á»£c xem dashboard"
             );
         }
 
@@ -145,7 +144,7 @@ public class DashboardController {
                 .getTodayActivitySummary();
     }
 
-        // STAFF và ADMIN xem dashboard bảo trì sân
+        // STAFF vÃ  ADMIN xem dashboard báº£o trÃ¬ sÃ¢n
         @GetMapping("/maintenance")
         public MaintenanceDashboardSummary getMaintenanceDashboard(
                 @AuthenticationPrincipal Jwt jwt) {
@@ -153,7 +152,7 @@ public class DashboardController {
         if (jwt == null) {
                 throw new BusinessException(
                         HttpStatus.UNAUTHORIZED,
-                        "Vui lòng đăng nhập"
+                        "Vui lÃ²ng Ä‘Äƒng nháº­p"
                 );
         }
 
@@ -163,7 +162,7 @@ public class DashboardController {
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
-                                "Không tìm thấy tài khoản"
+                                "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n"
                         )
                 );
 
@@ -174,7 +173,7 @@ public class DashboardController {
 
                 throw new BusinessException(
                         HttpStatus.FORBIDDEN,
-                        "Chỉ STAFF hoặc ADMIN được xem dashboard bảo trì"
+                        "Chá»‰ STAFF hoáº·c ADMIN Ä‘Æ°á»£c xem dashboard báº£o trÃ¬"
                 );
         }
 

@@ -132,6 +132,12 @@ public class NormalBooking {
     @Column(name = "amount_received")
     private Long amountReceived;
 
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
+
+    @Column(name = "paid_by")
+    private Long paidBy;
+
     // =====================================================
     // KHIẾU NẠI
     // =====================================================
@@ -452,4 +458,21 @@ public class NormalBooking {
     public void setAmountReceived(Long amountReceived) {
         this.amountReceived = amountReceived;
     }
+
+
+    public LocalDateTime getPaidAt() {
+        return paidAt;
+    }
+
+    public void setPaidAt(LocalDateTime paidAt) {
+        this.paidAt = paidAt;
+    }
+
+    public Long getPaidBy() {
+        return paidBy;
+    }
+    public void setPaidBy(Long paidBy) {
+    this.paidBy = paidBy;
+    }
+    
 }

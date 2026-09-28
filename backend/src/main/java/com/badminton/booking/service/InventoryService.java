@@ -148,7 +148,7 @@ public class InventoryService {
         }
 
         Product product = productRepository
-                .findById(request.getProductId())
+                .findByIdForUpdate(request.getProductId())
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND,
                         "Không tìm thấy sản phẩm"
