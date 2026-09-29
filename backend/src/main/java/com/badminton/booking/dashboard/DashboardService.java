@@ -18,6 +18,8 @@ import com.badminton.booking.repository.NormalBookingRepository;
 import com.badminton.booking.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.badminton.booking.entity.InventoryIssue;
+import com.badminton.booking.repository.InventoryIssueRepository;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +43,7 @@ public class DashboardService {
 
         private final CourtMaintenanceRepository
                 courtMaintenanceRepository;
+        private final InventoryIssueRepository inventoryIssueRepository;
 
         public DashboardService(
                 ProductRepository productRepository,
@@ -48,7 +51,8 @@ public class DashboardService {
                 DailyVisitorSessionRepository dailyVisitorSessionRepository,
                 DailyVisitorParticipantRepository dailyVisitorParticipantRepository,
                 CourtRepository courtRepository,
-                CourtMaintenanceRepository courtMaintenanceRepository) {
+                CourtMaintenanceRepository courtMaintenanceRepository,
+                InventoryIssueRepository inventoryIssueRepository) {
 
         this.productRepository = productRepository;
         this.normalBookingRepository =
@@ -60,6 +64,7 @@ public class DashboardService {
         this.courtRepository = courtRepository;
         this.courtMaintenanceRepository =
                 courtMaintenanceRepository;
+        this.inventoryIssueRepository = inventoryIssueRepository;
         }
 
     @Transactional(readOnly = true)
@@ -211,12 +216,14 @@ public class DashboardService {
         return summary;
     }
 
-    @Transactional(readOnly = true)
-    public TodayActivitySummary
-    getTodayActivitySummary() {
+        @Transactional(readOnly = true)
+        public TodayActivitySummary getTodayActivitySummary() {
+        return getActivitySummaryByDate(LocalDate.now());
+        }
 
-        LocalDate today = LocalDate.now();
-
+        @Transactional(readOnly = true)
+        public TodayActivitySummary getActivitySummaryByDate(LocalDate today) {
+                
         List<NormalBooking> bookings =
                 normalBookingRepository
                         .findByBookingDate(today);
@@ -227,6 +234,11 @@ public class DashboardService {
         int noShowBookings = 0;
 
         long normalBookingRevenue = 0L;
+        int paidNormalBookings = 0;
+        long courtRevenue = 0L;
+        long shuttlecockRevenue = 0L;
+        long soldTubes = 0L;
+        long soldPieces = 0L;
 
         for (NormalBooking booking : bookings) {
 
@@ -237,14 +249,10 @@ public class DashboardService {
 
                 pendingBookings++;
 
-            } else if ("CHECKED_IN".equals(status)) {
+                } else if ("CHECKED_IN".equals(status)
+                        || "COMPLETED".equals(status)) {
 
                 checkedInBookings++;
-
-                if (booking.getTotalAmount() != null) {
-                    normalBookingRevenue +=
-                            booking.getTotalAmount();
-                }
 
             } else if ("CANCELLED".equals(status)) {
 
@@ -257,17 +265,38 @@ public class DashboardService {
         }
 
         for (NormalBooking paid :
-        normalBookingRepository.findByPaidAtGreaterThanEqualAndPaidAtLessThan(
-                today.atStartOfDay(),
-                today.plusDays(1).atStartOfDay())) {
-        if (paid.getTotalAmount() != null) {
-                normalBookingRevenue += paid.getTotalAmount();
-        }
+                normalBookingRepository.findByPaidAtGreaterThanEqualAndPaidAtLessThan(
+                        today.atStartOfDay(),
+                        today.plusDays(1).atStartOfDay())) {
+
+        Long total = paid.getTotalAmount();
+        Long shuttle = paid.getShuttlecockAmount();
+
+        if (total == null || shuttle == null || total < shuttle || shuttle < 0) {
+                continue;
         }
 
+        paidNormalBookings++;
+        normalBookingRevenue += total;
+        courtRevenue += total - shuttle;
+        shuttlecockRevenue += shuttle;
+        for (InventoryIssue issue :
+        inventoryIssueRepository.findByIssueTypeInAndReferenceIdOrderByIssuedAtAscIdAsc(
+                List.of("NORMAL_BOOKING", "NORMAL_BOOKING_ADDON"),
+                paid.getId())) {
+        if (issue.getCancelledAt() != null) {
+                continue;
+        }
+        soldTubes += issue.getQuantityTubes() == null ? 0 : issue.getQuantityTubes();
+        soldPieces += issue.getQuantityPieces() == null ? 0 : issue.getQuantityPieces();
+        }
+
+
+        }
+
+
         List<DailyVisitorSession> sessions =
-                dailyVisitorSessionRepository
-                        .findBySessionDate(today);
+        dailyVisitorSessionRepository.findBySessionDate(today);
 
         int openDailyVisitorSessions = 0;
         int cancelledDailyVisitorSessions = 0;
@@ -323,6 +352,11 @@ public class DashboardService {
                 normalBookingRevenue
         );
 
+
+        summary.setPaidNormalBookings(paidNormalBookings);
+        summary.setCourtRevenue(courtRevenue);
+        summary.setShuttlecockRevenue(shuttlecockRevenue);
+
         summary.setTotalDailyVisitorSessions(
                 sessions.size()
         );
@@ -335,171 +369,172 @@ public class DashboardService {
         summary.setDailyVisitorCheckedInSlots(
                 checkedInSlots
         );
-
+        summary.setSoldTubes(soldTubes);
+        summary.setSoldPieces(soldPieces);
         return summary;
     }
 
     @Transactional(readOnly = true)
-public MaintenanceDashboardSummary
-getMaintenanceDashboard() {
+        public MaintenanceDashboardSummary
+        getMaintenanceDashboard() {
 
-    LocalDateTime now = LocalDateTime.now();
-    LocalDateTime warningLimit =
-            now.plusDays(30);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime warningLimit =
+                now.plusDays(30);
 
-    List<CourtMaintenance> activeRecords =
-            courtMaintenanceRepository
-                    .findByStatusInOrderByStartTimeAsc(
-                            List.of(
-                                    "SCHEDULED",
-                                    "IN_PROGRESS"
-                            )
-                    );
+        List<CourtMaintenance> activeRecords =
+                courtMaintenanceRepository
+                        .findByStatusInOrderByStartTimeAsc(
+                                List.of(
+                                        "SCHEDULED",
+                                        "IN_PROGRESS"
+                                )
+                        );
 
-    int inProgressCount =
-            (int) activeRecords.stream()
-                    .filter(record ->
-                            "IN_PROGRESS".equals(
-                                    record.getStatus()
-                            )
-                    )
-                    .count();
+        int inProgressCount =
+                (int) activeRecords.stream()
+                        .filter(record ->
+                                "IN_PROGRESS".equals(
+                                        record.getStatus()
+                                )
+                        )
+                        .count();
 
-    int scheduledCount =
-            (int) activeRecords.stream()
-                    .filter(record ->
-                            "SCHEDULED".equals(
-                                    record.getStatus()
-                            )
-                    )
-                    .count();
+        int scheduledCount =
+                (int) activeRecords.stream()
+                        .filter(record ->
+                                "SCHEDULED".equals(
+                                        record.getStatus()
+                                )
+                        )
+                        .count();
 
-    List<MaintenanceDashboardItem>
-            activeMaintenances =
-            activeRecords.stream()
-                    .map(this::toMaintenanceItem)
-                    .toList();
+        List<MaintenanceDashboardItem>
+                activeMaintenances =
+                activeRecords.stream()
+                        .map(this::toMaintenanceItem)
+                        .toList();
 
-    List<Court> alertCourts =
-            courtRepository.findAll()
-                    .stream()
-                    .filter(court ->
-                            Boolean.TRUE.equals(
-                                    court.getActive()
-                            )
-                    )
-                    .filter(court ->
-                            court.getNextMaintenanceAt()
-                                    != null
-                    )
-                    .filter(court ->
-                            !court.getNextMaintenanceAt()
-                                    .isAfter(warningLimit)
-                    )
-                    .sorted(
-                            Comparator.comparing(
-                                    Court::getNextMaintenanceAt
-                            )
-                    )
-                    .toList();
+        List<Court> alertCourts =
+                courtRepository.findAll()
+                        .stream()
+                        .filter(court ->
+                                Boolean.TRUE.equals(
+                                        court.getActive()
+                                )
+                        )
+                        .filter(court ->
+                                court.getNextMaintenanceAt()
+                                        != null
+                        )
+                        .filter(court ->
+                                !court.getNextMaintenanceAt()
+                                        .isAfter(warningLimit)
+                        )
+                        .sorted(
+                                Comparator.comparing(
+                                        Court::getNextMaintenanceAt
+                                )
+                        )
+                        .toList();
 
-    List<MaintenanceDashboardItem>
-            periodicAlerts =
-            new ArrayList<>();
+        List<MaintenanceDashboardItem>
+                periodicAlerts =
+                new ArrayList<>();
 
-    int overdueCourtCount = 0;
-    int dueSoonCourtCount = 0;
+        int overdueCourtCount = 0;
+        int dueSoonCourtCount = 0;
 
-    for (Court court : alertCourts) {
+        for (Court court : alertCourts) {
 
-        MaintenanceDashboardItem item =
-                new MaintenanceDashboardItem();
+                MaintenanceDashboardItem item =
+                        new MaintenanceDashboardItem();
 
-        item.setCourtId(court.getId());
-        item.setCourtName(court.getName());
-        item.setMaintenanceIntervalMonths(
-                court.getMaintenanceIntervalMonths()
-        );
-        item.setNextMaintenanceAt(
-                court.getNextMaintenanceAt()
-        );
+                item.setCourtId(court.getId());
+                item.setCourtName(court.getName());
+                item.setMaintenanceIntervalMonths(
+                        court.getMaintenanceIntervalMonths()
+                );
+                item.setNextMaintenanceAt(
+                        court.getNextMaintenanceAt()
+                );
 
-        if (!court.getNextMaintenanceAt()
-                .isAfter(now)) {
+                if (!court.getNextMaintenanceAt()
+                        .isAfter(now)) {
 
-            item.setAlertStatus("OVERDUE");
-            overdueCourtCount++;
+                item.setAlertStatus("OVERDUE");
+                overdueCourtCount++;
 
-        } else {
+                } else {
 
-            item.setAlertStatus("DUE_SOON");
-            dueSoonCourtCount++;
+                item.setAlertStatus("DUE_SOON");
+                dueSoonCourtCount++;
+                }
+
+                periodicAlerts.add(item);
         }
 
-        periodicAlerts.add(item);
-    }
+        MaintenanceDashboardSummary summary =
+                new MaintenanceDashboardSummary();
 
-    MaintenanceDashboardSummary summary =
-            new MaintenanceDashboardSummary();
-
-    summary.setInProgressCount(
-            inProgressCount
-    );
-    summary.setScheduledCount(
-            scheduledCount
-    );
-    summary.setOverdueCourtCount(
-            overdueCourtCount
-    );
-    summary.setDueSoonCourtCount(
-            dueSoonCourtCount
-    );
-    summary.setActiveMaintenances(
-            activeMaintenances
-    );
-    summary.setPeriodicMaintenanceAlerts(
-            periodicAlerts
-    );
-
-    return summary;
-}
-
-        private MaintenanceDashboardItem
-        toMaintenanceItem(
-                CourtMaintenance maintenance) {
-
-        Court court = maintenance.getCourt();
-
-        MaintenanceDashboardItem item =
-                new MaintenanceDashboardItem();
-
-        item.setMaintenanceId(
-                maintenance.getId()
+        summary.setInProgressCount(
+                inProgressCount
         );
-        item.setCourtId(court.getId());
-        item.setCourtName(court.getName());
-
-        item.setType(maintenance.getType());
-        item.setStatus(maintenance.getStatus());
-        item.setReason(maintenance.getReason());
-
-        item.setStartTime(
-                maintenance.getStartTime()
+        summary.setScheduledCount(
+                scheduledCount
         );
-        item.setEndTime(
-                maintenance.getEndTime()
+        summary.setOverdueCourtCount(
+                overdueCourtCount
+        );
+        summary.setDueSoonCourtCount(
+                dueSoonCourtCount
+        );
+        summary.setActiveMaintenances(
+                activeMaintenances
+        );
+        summary.setPeriodicMaintenanceAlerts(
+                periodicAlerts
         );
 
-        item.setMaintenanceIntervalMonths(
-                court.getMaintenanceIntervalMonths()
-        );
-        item.setNextMaintenanceAt(
-                court.getNextMaintenanceAt()
-        );
-        item.setAlertStatus(
-                maintenance.getStatus()
-        );
-
-        return item;
+        return summary;
         }
-}
+
+                private MaintenanceDashboardItem
+                toMaintenanceItem(
+                        CourtMaintenance maintenance) {
+
+                Court court = maintenance.getCourt();
+
+                MaintenanceDashboardItem item =
+                        new MaintenanceDashboardItem();
+
+                item.setMaintenanceId(
+                        maintenance.getId()
+                );
+                item.setCourtId(court.getId());
+                item.setCourtName(court.getName());
+
+                item.setType(maintenance.getType());
+                item.setStatus(maintenance.getStatus());
+                item.setReason(maintenance.getReason());
+
+                item.setStartTime(
+                        maintenance.getStartTime()
+                );
+                item.setEndTime(
+                        maintenance.getEndTime()
+                );
+
+                item.setMaintenanceIntervalMonths(
+                        court.getMaintenanceIntervalMonths()
+                );
+                item.setNextMaintenanceAt(
+                        court.getNextMaintenanceAt()
+                );
+                item.setAlertStatus(
+                        maintenance.getStatus()
+                );
+
+                return item;
+                }
+        }

@@ -5,6 +5,9 @@ import com.badminton.booking.entity.User;
 import com.badminton.booking.exception.BusinessException;
 import com.badminton.booking.repository.UserRepository;
 
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -143,6 +146,41 @@ public class DashboardController {
         return dashboardService
                 .getTodayActivitySummary();
     }
+
+
+
+        @GetMapping("/date/{date}")
+        public TodayActivitySummary getSummaryByDate(
+                @PathVariable
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+                @AuthenticationPrincipal Jwt jwt) {
+
+        if (jwt == null) {
+                throw new BusinessException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Vui lòng đăng nhập"
+                );
+        }
+
+        Long staffId = Long.valueOf(jwt.getSubject());
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "Không tìm thấy tài khoản"
+                ));
+
+        if (!"STAFF".equals(staff.getRole())
+                && !"ADMIN".equals(staff.getRole())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "Chỉ STAFF hoặc ADMIN được xem dashboard"
+                );
+        }
+
+        return dashboardService.getActivitySummaryByDate(date);
+        }
+
+
 
         // STAFF vÃ  ADMIN xem dashboard báº£o trÃ¬ sÃ¢n
         @GetMapping("/maintenance")

@@ -13,11 +13,23 @@ public class TodayActivitySummary {
     private Integer noShowNormalBookings;
 
     private Long normalBookingRevenue;
+    private Integer paidNormalBookings;
+    private Long courtRevenue;
+    private Long shuttlecockRevenue;
 
     private Integer totalDailyVisitorSessions;
     private Integer openDailyVisitorSessions;
     private Integer cancelledDailyVisitorSessions;
     private Long dailyVisitorCheckedInSlots;
+
+    private Long soldTubes;
+    private Long soldPieces;
+
+    public Long getSoldTubes() { return soldTubes; }
+    public void setSoldTubes(Long soldTubes) { this.soldTubes = soldTubes; }
+
+    public Long getSoldPieces() { return soldPieces; }
+    public void setSoldPieces(Long soldPieces) { this.soldPieces = soldPieces; }
 
     public TodayActivitySummary() {
     }
@@ -128,5 +140,29 @@ public class TodayActivitySummary {
             Long dailyVisitorCheckedInSlots) {
         this.dailyVisitorCheckedInSlots =
                 dailyVisitorCheckedInSlots;
+    }
+
+    public Integer getPaidNormalBookings() {
+    return paidNormalBookings;
+    }
+
+    public void setPaidNormalBookings(Integer paidNormalBookings) {
+        this.paidNormalBookings = paidNormalBookings;
+    }
+
+    public Long getCourtRevenue() {
+        return courtRevenue;
+    }
+
+    public void setCourtRevenue(Long courtRevenue) {
+        this.courtRevenue = courtRevenue;
+    }
+
+    public Long getShuttlecockRevenue() {
+        return shuttlecockRevenue;
+    }
+
+    public void setShuttlecockRevenue(Long shuttlecockRevenue) {
+        this.shuttlecockRevenue = shuttlecockRevenue;
     }
 }
