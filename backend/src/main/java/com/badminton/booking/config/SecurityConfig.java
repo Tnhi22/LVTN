@@ -135,6 +135,25 @@ public class SecurityConfig {
                                 "/api/products/**"
                         ).hasAnyRole("STAFF", "ADMIN")
 
+
+                        // Chỉ ADMIN được xem cả sản phẩm đã ngừng bán.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/products/admin"
+                        ).hasRole("ADMIN")
+
+                        // Chỉ ADMIN được sửa thông tin sản phẩm.
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/products/*"
+                        ).hasRole("ADMIN")
+
+                        // Chỉ ADMIN được ngừng bán hoặc bán lại sản phẩm.
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/products/*/active"
+                        ).hasRole("ADMIN")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/uploads/products/**"
@@ -178,6 +197,13 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/admin/staff-performance/**")
                         .hasRole("ADMIN")
+
+                        // STAFF/ADMIN trả lời review
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/court-reviews/*/reply"
+                        ).hasAnyRole("STAFF", "ADMIN")
+
 
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()

@@ -4,10 +4,11 @@ import com.badminton.booking.dto.InventoryDashboardItem;
 import com.badminton.booking.entity.User;
 import com.badminton.booking.exception.BusinessException;
 import com.badminton.booking.repository.UserRepository;
+import com.badminton.booking.dto.DailyRevenuePoint;
 
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
-
+import com.badminton.booking.dto.RangeDashboardSummary;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -216,5 +217,60 @@ public class DashboardController {
         }
 
         return dashboardService.getMaintenanceDashboard();
+        }
+
+
+
+        @GetMapping("/range")
+        public RangeDashboardSummary getRangeSummary(
+                @RequestParam("from")
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                @RequestParam("to")
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                @AuthenticationPrincipal Jwt jwt) {
+
+        if (jwt == null) {
+                throw new BusinessException(HttpStatus.UNAUTHORIZED, "Vui lòng đăng nhập");
+        }
+
+        Long staffId = Long.valueOf(jwt.getSubject());
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+
+        if (!"STAFF".equals(staff.getRole())
+                && !"ADMIN".equals(staff.getRole())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN, "Chỉ STAFF hoặc ADMIN được xem dashboard");
+        }
+
+        return dashboardService.getRangeSummary(from, to);
+        }
+
+
+        @GetMapping("/revenue-trend")
+        public List<DailyRevenuePoint> getRevenueTrend(
+                @RequestParam("from")
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                @RequestParam("to")
+                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                @AuthenticationPrincipal Jwt jwt) {
+
+        if (jwt == null) {
+                throw new BusinessException(HttpStatus.UNAUTHORIZED, "Vui lòng đăng nhập");
+        }
+
+        Long staffId = Long.valueOf(jwt.getSubject());
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+
+        if (!"STAFF".equals(staff.getRole())
+                && !"ADMIN".equals(staff.getRole())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN, "Chỉ STAFF hoặc ADMIN được xem dashboard");
+        }
+
+        return dashboardService.getRevenueTrend(from, to);
         }
 }

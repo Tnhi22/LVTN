@@ -372,20 +372,42 @@ public class BookingController {
             checkedInBy = staff.getId();
         }
 
+        // Kiểm tra ID sân.
+        if (courtIds.stream().anyMatch(id -> id == null || id <= 0)) {
+        throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "ID sân không hợp lệ"
+        );
+        }
+
+        // Không cho chọn cùng một sân nhiều lần.
+        if (new java.util.HashSet<>(courtIds).size() != courtIds.size()) {
+        throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "Không được chọn trùng sân"
+        );
+        }
+
+        // Các yêu cầu đặt nhiều sân đều khóa theo cùng thứ tự.
+        courtIds.sort(Long::compareTo);
+
         List<Court> selectedCourts = new ArrayList<>();
 
         for (Long courtId : courtIds) {
-            Court court = courtRepository.findById(courtId)
-                    .orElseThrow(() -> new BusinessException(
-                            HttpStatus.NOT_FOUND,
-                            "Không tìm thấy sân ID: " + courtId
-                    ));
+        Court court = courtRepository.findByIdForBooking(courtId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "Không tìm thấy sân ID: " + courtId
+                ));
+
         if (!Boolean.TRUE.equals(court.getActive())) {
                 throw new BusinessException(
                         HttpStatus.CONFLICT,
                         "Sân " + court.getName() + " đang ngừng hoạt động"
                 );
-                }
+        }
+
+    // Giữ nguyên phần kiểm tra bảo trì và trùng lịch phía dưới.
 
                 boolean maintenanceOverlap =
                         courtMaintenanceRepository.existsActiveMaintenanceOverlap(

@@ -9,6 +9,9 @@ import com.badminton.booking.repository.CourtReviewRepository;
 import com.badminton.booking.repository.NormalBookingRepository;
 import com.badminton.booking.repository.UserRepository;
 import java.util.List;
+import com.badminton.booking.dto.StaffReviewReplyRequest;
+import java.time.LocalDateTime;
+import org.springframework.transaction.annotation.Transactional;
 import com.badminton.booking.dto.UpdateCourtReviewRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -225,4 +228,47 @@ public class CourtReviewService {
 
         courtReviewRepository.delete(review);
     }
+
+
+
+
+    @Transactional
+        public CourtReview replyToReview(
+                Long reviewId, Long staffId, StaffReviewReplyRequest request) {
+
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+
+        if (!"STAFF".equals(staff.getRole())
+                && !"ADMIN".equals(staff.getRole())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN, "Chỉ STAFF hoặc ADMIN được trả lời đánh giá");
+        }
+        if (!"ACTIVE".equals(staff.getStatus())) {
+                throw new BusinessException(
+                        HttpStatus.FORBIDDEN, "Tài khoản nhân viên không hoạt động");
+        }
+
+        if (request == null || request.reply() == null
+                || request.reply().isBlank()
+                || request.reply().trim().length() > 1000) {
+                throw new BusinessException(
+                        HttpStatus.BAD_REQUEST, "Câu trả lời phải có từ 1 đến 1000 ký tự");
+        }
+
+        CourtReview review = courtReviewRepository.findById(reviewId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, "Không tìm thấy đánh giá"));
+
+        if (review.getStaffReply() != null) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT, "Đánh giá này đã được trả lời");
+        }
+
+        review.setStaffReply(request.reply().trim());
+        review.setRepliedAt(LocalDateTime.now());
+        review.setRepliedBy(staffId);
+        return courtReviewRepository.save(review);
+        }
 }

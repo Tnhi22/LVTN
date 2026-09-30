@@ -20,6 +20,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.badminton.booking.entity.InventoryIssue;
 import com.badminton.booking.repository.InventoryIssueRepository;
+import com.badminton.booking.dto.RangeDashboardSummary;
+import com.badminton.booking.entity.InventoryIssue;
+import com.badminton.booking.exception.BusinessException;
+import org.springframework.http.HttpStatus;
+import com.badminton.booking.dto.DailyRevenuePoint;
+import com.badminton.booking.exception.BusinessException;
+import org.springframework.http.HttpStatus;
+
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -537,4 +545,113 @@ public class DashboardService {
 
                 return item;
                 }
-        }
+
+                @Transactional(readOnly = true)
+                public RangeDashboardSummary getRangeSummary(LocalDate from, LocalDate to) {
+                if (from == null || to == null || to.isBefore(from)
+                        || to.isAfter(from.plusDays(366))) {
+                        throw new BusinessException(
+                                HttpStatus.BAD_REQUEST,
+                                "Khoảng ngày không hợp lệ hoặc dài hơn 366 ngày"
+                        );
+                }
+
+                int paidBookings = 0;
+                long courtRevenue = 0L;
+                long shuttleRevenue = 0L;
+                long soldTubes = 0L;
+                long soldPieces = 0L;
+
+                List<NormalBooking> paid =
+                        normalBookingRepository.findByPaidAtGreaterThanEqualAndPaidAtLessThan(
+                                from.atStartOfDay(),
+                                to.plusDays(1).atStartOfDay()
+                        );
+
+                for (NormalBooking booking : paid) {
+                        Long total = booking.getTotalAmount();
+                        Long shuttle = booking.getShuttlecockAmount();
+
+                        if (total == null || shuttle == null || shuttle < 0 || total < shuttle) {
+                        continue;
+                        }
+
+                        paidBookings++;
+                        courtRevenue += total - shuttle;
+                        shuttleRevenue += shuttle;
+
+                        for (InventoryIssue issue :
+                                inventoryIssueRepository.findByIssueTypeInAndReferenceIdOrderByIssuedAtAscIdAsc(
+                                        List.of("NORMAL_BOOKING", "NORMAL_BOOKING_ADDON"),
+                                        booking.getId())) {
+                        if (issue.getCancelledAt() != null) {
+                                continue;
+                        }
+                        soldTubes += issue.getQuantityTubes() == null
+                                ? 0 : issue.getQuantityTubes();
+                        soldPieces += issue.getQuantityPieces() == null
+                                ? 0 : issue.getQuantityPieces();
+                        }
+                }
+
+                return new RangeDashboardSummary(
+                        from, to, paidBookings,
+                        courtRevenue, shuttleRevenue,
+                        courtRevenue + shuttleRevenue,
+                        soldTubes, soldPieces
+                );
+                }
+
+
+
+
+                @Transactional(readOnly = true)
+                public List<DailyRevenuePoint> getRevenueTrend(LocalDate from, LocalDate to) {
+                if (from == null || to == null || to.isBefore(from)
+                        || to.isAfter(from.plusDays(366))) {
+                        throw new BusinessException(
+                                HttpStatus.BAD_REQUEST,
+                                "Khoảng ngày không hợp lệ hoặc dài hơn 366 ngày"
+                        );
+                }
+
+                List<NormalBooking> paidBookings =
+                        normalBookingRepository.findByPaidAtGreaterThanEqualAndPaidAtLessThan(
+                                from.atStartOfDay(),
+                                to.plusDays(1).atStartOfDay()
+                        );
+
+                List<DailyRevenuePoint> result = new ArrayList<>();
+
+                for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+                        int count = 0;
+                        long courtRevenue = 0L;
+                        long shuttlecockRevenue = 0L;
+
+                        for (NormalBooking booking : paidBookings) {
+                        if (booking.getPaidAt() == null
+                                || !booking.getPaidAt().toLocalDate().equals(day)) {
+                                continue;
+                        }
+
+                        Long total = booking.getTotalAmount();
+                        Long shuttle = booking.getShuttlecockAmount();
+
+                        if (total == null || shuttle == null || shuttle < 0 || total < shuttle) {
+                                continue;
+                        }
+
+                        count++;
+                        courtRevenue += total - shuttle;
+                        shuttlecockRevenue += shuttle;
+                        }
+
+                        result.add(new DailyRevenuePoint(
+                                day, count, courtRevenue, shuttlecockRevenue,
+                                courtRevenue + shuttlecockRevenue
+                        ));
+                }
+
+                return result;
+                }
+}

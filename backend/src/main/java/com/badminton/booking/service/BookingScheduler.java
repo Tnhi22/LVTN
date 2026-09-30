@@ -134,6 +134,9 @@ public class BookingScheduler {
             if (user == null) {
                 continue;
             }
+            if (!"CUSTOMER".equals(user.getRole())) {
+                continue;
+                }
 
                 String oldStatus = user.getStatus();
                 String newStatus;

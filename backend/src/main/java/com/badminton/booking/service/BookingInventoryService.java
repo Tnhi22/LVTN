@@ -72,7 +72,7 @@ public class BookingInventoryService {
         }
 
         Product product = productRepository
-                .findById(productId)
+                .findByIdForUpdate(productId)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND,
                         "Không tìm thấy sản phẩm cầu"

@@ -46,6 +46,15 @@ public class CourtReview {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "staff_reply", length = 1000)
+    private String staffReply;
+
+    @Column(name = "replied_at")
+    private LocalDateTime repliedAt;
+
+    @Column(name = "replied_by")
+    private Long repliedBy;
+
     public CourtReview() {
     }
 
@@ -101,4 +110,25 @@ public class CourtReview {
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
+
+    public String getStaffReply() { 
+        return staffReply; 
+        }
+    public void setStaffReply(String staffReply) { 
+        this.staffReply = staffReply; 
+        }
+
+    public LocalDateTime getRepliedAt() { 
+        return repliedAt; 
+        }
+    public void setRepliedAt(LocalDateTime repliedAt) { 
+        this.repliedAt = repliedAt; 
+        }
+
+    public Long getRepliedBy() { 
+        return repliedBy; 
+        }
+    public void setRepliedBy(Long repliedBy) { 
+        this.repliedBy = repliedBy; 
+        }
 }

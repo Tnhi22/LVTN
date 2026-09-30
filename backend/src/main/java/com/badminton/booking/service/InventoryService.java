@@ -154,6 +154,7 @@ public class InventoryService {
                         "Không tìm thấy sản phẩm"
                 ));
 
+        requireActiveProduct(product);
         Integer currentStock =
                 product.getStockQuantityTubes();
 
@@ -379,6 +380,7 @@ public class InventoryService {
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND, "Không tìm thấy sản phẩm"));
 
+        requireActiveProduct(product);
         Long piecePrice = product.getPiecePrice();
         if (piecePrice == null || piecePrice <= 0) {
                 throw new BusinessException(
@@ -496,8 +498,18 @@ public class InventoryService {
                         "Không thể bán đủ số quả theo FIFO");
         }
 
-        product.setStockQuantityTubes(stock - openedTubes);
-        productRepository.save(product);
-        return issue;
+                product.setStockQuantityTubes(stock - openedTubes);
+                productRepository.save(product);
+                return issue;
+        }
+
+        // Dùng chung cho bán nguyên ống và bán lẻ.
+        private void requireActiveProduct(Product product) {
+                if (!Boolean.TRUE.equals(product.getActive())) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "Sản phẩm hiện đã ngừng kinh doanh"
+                );
+                }
         }
 }

@@ -6,7 +6,7 @@ import com.badminton.booking.service.CourtReviewService;
 
 import com.badminton.booking.dto.UpdateCourtReviewRequest;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-
+import com.badminton.booking.dto.StaffReviewReplyRequest;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import com.badminton.booking.entity.User;
@@ -122,4 +122,15 @@ public class CourtReviewController {
 
         courtReviewService.deleteReviewByAdmin(reviewId);
     }
+
+
+    @PostMapping("/{reviewId}/reply")
+        public CourtReview replyToReview(
+                @PathVariable Long reviewId,
+                @RequestBody StaffReviewReplyRequest request,
+                @AuthenticationPrincipal Jwt jwt) {
+
+        Long staffId = Long.valueOf(jwt.getSubject());
+        return courtReviewService.replyToReview(reviewId, staffId, request);
+        }
 }

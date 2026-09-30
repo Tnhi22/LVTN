@@ -196,6 +196,9 @@ public class DailyVisitorScheduler {
 
                     User user =
                             participant.getUser();
+                if (!"CUSTOMER".equals(user.getRole())) {
+                        continue;
+                        }
 
                     if ("ACTIVE".equals(user.getStatus())) {
 
