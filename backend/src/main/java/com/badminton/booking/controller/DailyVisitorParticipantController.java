@@ -85,10 +85,13 @@ public class DailyVisitorParticipantController {
     }
 
         // CUSTOMER tự hủy Daily Visitor trên web
+// CUSTOMER hủy đăng ký của chính mình.
     @DeleteMapping("/{participantId}/cancel")
     public DailyVisitorParticipant cancelByCustomer(
             @PathVariable Long participantId,
-            @RequestParam Long userId) {
+            @AuthenticationPrincipal Jwt jwt) {
+
+        Long userId = Long.valueOf(jwt.getSubject());
 
         return participantService.cancelByCustomer(
                 participantId,

@@ -10,6 +10,9 @@ import com.badminton.booking.repository.DailyVisitorSessionRepository;
 import com.badminton.booking.repository.UserRepository;
 import com.badminton.booking.repository.VisitorRepository;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,49 +23,42 @@ import java.time.LocalDateTime;
 public class DailyVisitorParticipantService {
 
     private final DailyVisitorParticipantRepository participantRepository;
-    private final DailyVisitorSessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final VisitorRepository visitorRepository;
     private final DailyVisitorPaymentService paymentService;
-    private final DailyVisitorInventoryService
-        dailyVisitorInventoryService;
+    private final DailyVisitorInventoryService dailyVisitorInventoryService;
+    private final DailyVisitorWaitlistService waitlistService;
 
+    @PersistenceContext
+    private EntityManager entityManager;
 
-    
-
-        public DailyVisitorParticipantService(
-                DailyVisitorParticipantRepository participantRepository,
-                DailyVisitorSessionRepository sessionRepository,
-                UserRepository userRepository,
-                VisitorRepository visitorRepository,
-                DailyVisitorInventoryService
-                        dailyVisitorInventoryService,
-                DailyVisitorPaymentService paymentService) {
+    public DailyVisitorParticipantService(
+            DailyVisitorParticipantRepository participantRepository,
+            DailyVisitorSessionRepository sessionRepository,
+            UserRepository userRepository,
+            VisitorRepository visitorRepository,
+            DailyVisitorInventoryService dailyVisitorInventoryService,
+            DailyVisitorPaymentService paymentService,
+            DailyVisitorWaitlistService waitlistService) {
 
         this.participantRepository = participantRepository;
-        this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.visitorRepository = visitorRepository;
-        this.dailyVisitorInventoryService =
-                dailyVisitorInventoryService;
+        this.dailyVisitorInventoryService = dailyVisitorInventoryService;
         this.paymentService = paymentService;
-        }
+        this.waitlistService = waitlistService;
+    }
 
     // =========================================================
-    // 1. CUSTOMER đăng ký online
-    // 1 tài khoản = 1 slot/session
+    // 1. CUSTOMER đăng ký online: một tài khoản = một slot
     // =========================================================
+
     @Transactional
     public DailyVisitorParticipant register(
             Long sessionId,
             Long userId) {
 
-        if (sessionId == null) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Vui lòng chọn lượt chơi"
-            );
-        }
+        validateSessionId(sessionId);
 
         if (userId == null) {
             throw new BusinessException(
@@ -71,11 +67,8 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        DailyVisitorSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(
-                        HttpStatus.NOT_FOUND,
-                        "Không tìm thấy lượt chơi"
-                ));
+        DailyVisitorSession session =
+                waitlistService.lockSession(sessionId);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(
@@ -83,38 +76,25 @@ public class DailyVisitorParticipantService {
                         "Không tìm thấy người dùng"
                 ));
 
-        if (!"CUSTOMER".equals(user.getRole())) {
-        throw new BusinessException(
-                HttpStatus.FORBIDDEN,
-                "Chỉ khách hàng mới có thể tự đăng ký lượt chơi"
-        );
-        }
+        validateCustomerCanRegister(user);
 
-        if (!Boolean.TRUE.equals(user.getPhoneVerified())) {
-        throw new BusinessException(
-                HttpStatus.FORBIDDEN,
-                "Vui lòng xác minh số điện thoại trước khi đăng ký chơi"
-        );
-        }
+        // Ưu tiên người đang chờ và xử lý lời mời đã hết hạn.
+        waitlistService.processSession(sessionId);
+        validateSessionCanRegister(session);
 
-        if ("SUSPENDED".equals(user.getStatus())) {
-        throw new BusinessException(
-                HttpStatus.FORBIDDEN,
-                "Tài khoản đã bị khóa nên không thể đăng ký lượt chơi"
-        );
-        }
-
-        if (!"OPEN".equals(session.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt chơi đã đầy hoặc không còn mở đăng ký"
-            );
-        }
-
-        boolean alreadyRegistered =
-                participantRepository.existsBySessionIdAndUserId(
-                        sessionId,
-                        userId
+        // Chỉ chặn đăng ký còn hiệu lực.
+        // Đăng ký đã CANCELLED không ngăn khách đăng ký lại.
+        boolean alreadyRegistered = participantRepository
+                .findBySessionId(sessionId)
+                .stream()
+                .anyMatch(participant ->
+                        participant.getUser() != null
+                                && userId.equals(
+                                        participant.getUser().getId()
+                                )
+                                && !"CANCELLED".equals(
+                                        participant.getStatus()
+                                )
                 );
 
         if (alreadyRegistered) {
@@ -124,20 +104,14 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        Long usedSlots = participantRepository.getUsedSlots(sessionId);
-        if (usedSlots == null) {
-            usedSlots = 0L;
-        }
-
-        long remainingSlots = session.getMaxParticipants() - usedSlots;
+        // Bao gồm cả slot đang giữ cho người được mời.
+        long remainingSlots =
+                waitlistService.getAvailableSlots(session);
 
         if (remainingSlots < 1) {
-            session.setStatus("FULL");
-            sessionRepository.save(session);
-
             throw new BusinessException(
                     HttpStatus.CONFLICT,
-                    "Lượt chơi đã đủ số người"
+                    "Buổi chơi không còn slot có thể đăng ký"
             );
         }
 
@@ -146,23 +120,25 @@ public class DailyVisitorParticipantService {
 
         participant.setSession(session);
         participant.setUser(user);
+        participant.setParticipantName(user.getFullName().trim());
         participant.setSlotCount(1);
+        participant.setCheckedInSlots(0);
         participant.setStatus("CONFIRMED");
 
         DailyVisitorParticipant savedParticipant =
-                participantRepository.save(participant);
+                participantRepository.saveAndFlush(participant);
 
-        if (usedSlots + 1 >= session.getMaxParticipants()) {
-            session.setStatus("FULL");
-            sessionRepository.save(session);
-        }
+        // Cập nhật OPEN/FULL theo đăng ký và slot giữ tạm.
+        waitlistService.processSession(sessionId);
 
         return savedParticipant;
     }
 
     // =========================================================
-    // 2. STAFF đăng ký khách tại quầy
+    // 2. Đăng ký khách tại quầy
+    // Quyền STAFF/ADMIN phải được bảo vệ tại API/SecurityConfig.
     // =========================================================
+
     @Transactional
     public DailyVisitorParticipant registerWalkIn(
             Long sessionId,
@@ -170,45 +146,16 @@ public class DailyVisitorParticipantService {
             String phone,
             Integer slotCount) {
 
-        if (sessionId == null) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Vui lòng chọn lượt chơi"
-            );
-        }
+        validateSessionId(sessionId);
 
-        DailyVisitorSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(
-                        HttpStatus.NOT_FOUND,
-                        "Không tìm thấy lượt chơi"
-                ));
-                LocalDateTime sessionStart = LocalDateTime.of(
-                session.getSessionDate(),
-                session.getStartTime()
-                );
-
-                if (!LocalDateTime.now().isBefore(sessionStart)) {
-                throw new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "Buổi chơi đã bắt đầu, không thể đăng ký thêm"
-                );
-                }
-
-        if (!"OPEN".equals(session.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt chơi đã đầy hoặc không còn mở đăng ký"
-            );
-        }
-
-        if (fullName == null || fullName.trim().isEmpty()) {
+        if (fullName == null || fullName.isBlank()) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
                     "Vui lòng nhập tên khách hàng"
             );
         }
 
-        if (phone == null || phone.trim().isEmpty()) {
+        if (phone == null || phone.isBlank()) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
                     "Vui lòng nhập số điện thoại người đại diện"
@@ -222,15 +169,42 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        String normalizedPhone = phone.trim();
-        String normalizedName = fullName.trim();
+        DailyVisitorSession session =
+                waitlistService.lockSession(sessionId);
 
-        Visitor visitor = visitorRepository.findByPhone(normalizedPhone)
+        waitlistService.processSession(sessionId);
+        validateSessionCanRegister(session);
+
+        long remainingSlots =
+                waitlistService.getAvailableSlots(session);
+
+        if (remainingSlots < 1) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "Buổi chơi không còn slot có thể đăng ký"
+            );
+        }
+
+        if (slotCount > remainingSlots) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "Buổi chơi chỉ còn "
+                            + remainingSlots
+                            + " slot có thể đăng ký"
+            );
+        }
+
+        String normalizedName = fullName.trim();
+        String normalizedPhone = phone.trim();
+
+        Visitor visitor = visitorRepository
+                .findByPhone(normalizedPhone)
                 .orElseGet(() -> {
                     Visitor newVisitor = new Visitor();
                     newVisitor.setFullName(normalizedName);
                     newVisitor.setPhone(normalizedPhone);
                     newVisitor.setStatus("ACTIVE");
+
                     return visitorRepository.save(newVisitor);
                 });
 
@@ -238,30 +212,6 @@ public class DailyVisitorParticipantService {
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
                     "Số điện thoại này đã bị khóa do từng không đến nhận sân"
-            );
-        }
-
-        Long usedSlots = participantRepository.getUsedSlots(sessionId);
-        if (usedSlots == null) {
-            usedSlots = 0L;
-        }
-
-        long remainingSlots = session.getMaxParticipants() - usedSlots;
-
-        if (remainingSlots <= 0) {
-            session.setStatus("FULL");
-            sessionRepository.save(session);
-
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt chơi đã đủ số người"
-            );
-        }
-
-        if (slotCount > remainingSlots) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt chơi chỉ còn " + remainingSlots + " slot trống"
             );
         }
 
@@ -273,102 +223,59 @@ public class DailyVisitorParticipantService {
         participant.setParticipantName(normalizedName);
         participant.setRepresentativePhone(normalizedPhone);
         participant.setSlotCount(slotCount);
+        participant.setCheckedInSlots(0);
         participant.setStatus("CONFIRMED");
 
         DailyVisitorParticipant savedParticipant =
-                participantRepository.save(participant);
+                participantRepository.saveAndFlush(participant);
 
-        if (usedSlots + slotCount >= session.getMaxParticipants()) {
-            session.setStatus("FULL");
-            sessionRepository.save(session);
-        }
+        waitlistService.processSession(sessionId);
 
         return savedParticipant;
     }
 
     // =========================================================
-    // 3. STAFF/ADMIN check-in Daily Visitor
+    // 3. STAFF/ADMIN check-in
     // =========================================================
+
     @Transactional
     public DailyVisitorParticipant checkIn(
             Long participantId,
             Long staffId) {
 
+        User staff = requireStaff(staffId);
+
+        // Khóa session và đọc lại participant trước khi xử lý.
         DailyVisitorParticipant participant =
-                participantRepository.findById(participantId)
-                        .orElseThrow(() -> new BusinessException(
-                                HttpStatus.NOT_FOUND,
-                                "Không tìm thấy người đăng ký"
-                        ));
-        DailyVisitorSession lockedSession =
-                paymentService.lockSession(
-                        participant.getSession().getId()
-                );
+                findParticipantForUpdate(participantId);
 
-        User staff = userRepository.findById(staffId)
-                .orElseThrow(() -> new BusinessException(
-                        HttpStatus.NOT_FOUND,
-                        "Không tìm thấy nhân viên"
-                ));
-
-        if (!"STAFF".equals(staff.getRole())
-                && !"ADMIN".equals(staff.getRole())) {
-            throw new BusinessException(
-                    HttpStatus.FORBIDDEN,
-                    "Chỉ STAFF hoặc ADMIN mới có thể check-in"
-            );
-        }
+        DailyVisitorSession session = participant.getSession();
 
         if (!"CONFIRMED".equals(participant.getStatus())) {
+            String message;
+
             if ("CHECKED_IN".equals(participant.getStatus())) {
-                throw new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "Người chơi đã được check-in trước đó"
-                );
-            }
-
-            if ("NO_SHOW".equals(participant.getStatus())) {
-                throw new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "Người chơi đã bị đánh dấu NO_SHOW"
-                );
-            }
-
-            if ("CANCELLED".equals(participant.getStatus())) {
-                throw new BusinessException(
-                        HttpStatus.CONFLICT,
-                        "Lượt đăng ký đã bị hủy"
-                );
+                message = "Người chơi đã được check-in trước đó";
+            } else if ("NO_SHOW".equals(participant.getStatus())) {
+                message = "Người chơi đã bị đánh dấu NO_SHOW";
+            } else if ("CANCELLED".equals(participant.getStatus())) {
+                message = "Lượt đăng ký đã bị hủy";
+            } else {
+                message = "Trạng thái hiện tại không cho phép check-in";
             }
 
             throw new BusinessException(
                     HttpStatus.CONFLICT,
-                    "Trạng thái hiện tại không cho phép check-in"
+                    message
             );
         }
 
-        DailyVisitorSession session = lockedSession;
-        if (session == null) {
-            throw new BusinessException(
-                    HttpStatus.NOT_FOUND,
-                    "Không tìm thấy lượt chơi"
-            );
-        }
-
-        if ("CANCELLED".equals(session.getStatus())
-                || "CLOSED".equals(session.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt chơi đã bị hủy hoặc đã đóng"
-            );
-        }
+        validateSessionCanBeCancelled(session);
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime sessionStart = LocalDateTime.of(
-                session.getSessionDate(),
-                session.getStartTime()
-        );
-        LocalDateTime finalCheckInTime = sessionStart.plusMinutes(30);
+        LocalDateTime sessionStart = getSessionStart(session);
+        LocalDateTime finalCheckInTime =
+                sessionStart.plusMinutes(30);
 
         if (now.isBefore(sessionStart)) {
             throw new BusinessException(
@@ -384,9 +291,10 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        participant.setCheckedInSlots(
-                participant.getSlotCount()
-        );
+        // Buổi đã bắt đầu: kết thúc các yêu cầu waiting.
+        waitlistService.processSession(session.getId());
+
+        participant.setCheckedInSlots(participant.getSlotCount());
         participant.setStatus("CHECKED_IN");
         participant.setCheckedInAt(now);
         participant.setCheckedInBy(staff.getId());
@@ -399,40 +307,46 @@ public class DailyVisitorParticipantService {
                         session.getId()
                 );
 
-        if (checkedInSlots == null) {
-        checkedInSlots = 0L;
-        }
+        long actualCheckedInSlots =
+                checkedInSlots == null ? 0L : checkedInSlots;
 
-        // Khi đủ số người tối thiểu thì xuất đúng 1 ống cầu FIFO
-        if (checkedInSlots >= session.getMinParticipants()
+        // Giữ nguyên quy trình xuất cầu FIFO.
+        if (actualCheckedInSlots >= session.getMinParticipants()
                 && !Boolean.TRUE.equals(
-                        session.getShuttlecockIssued())) {
+                        session.getShuttlecockIssued()
+                )) {
 
-        dailyVisitorInventoryService
-                .issueForSession(session);
+            dailyVisitorInventoryService.issueForSession(session);
         }
+
+        // Giữ nguyên quy trình thu tiền tại check-in.
         paymentService.collectAtCheckIn(
-        savedParticipant,
-        session,
-        staff.getId()
+                savedParticipant,
+                session,
+                staff.getId()
         );
+
         return savedParticipant;
     }
 
     // =========================================================
-    // 4. CUSTOMER tự hủy Daily Visitor
+    // 4. CUSTOMER hủy đăng ký của chính mình
     // =========================================================
+
     @Transactional
     public DailyVisitorParticipant cancelByCustomer(
             Long participantId,
             Long userId) {
 
+        if (userId == null) {
+            throw new BusinessException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Không xác định được tài khoản đăng nhập"
+            );
+        }
+
         DailyVisitorParticipant participant =
-                participantRepository.findById(participantId)
-                        .orElseThrow(() -> new BusinessException(
-                                HttpStatus.NOT_FOUND,
-                                "Không tìm thấy lượt đăng ký"
-                        ));
+                findParticipantForUpdate(participantId);
 
         if (participant.getUser() == null) {
             throw new BusinessException(
@@ -441,7 +355,7 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        if (!participant.getUser().getId().equals(userId)) {
+        if (!userId.equals(participant.getUser().getId())) {
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
                     "Bạn không có quyền hủy lượt đăng ký này"
@@ -455,34 +369,111 @@ public class DailyVisitorParticipantService {
             );
         }
 
-        validateParticipantCanBeCancelled(participant);
-
-        DailyVisitorSession session = participant.getSession();
-        validateSessionCanBeCancelled(session);
-        validateCancellationDeadline(session);
-
-        participant.setStatus("CANCELLED");
-        DailyVisitorParticipant savedParticipant =
-                participantRepository.save(participant);
-
-        reopenSessionIfFull(session);
-        return savedParticipant;
+        return cancelParticipant(participant);
     }
 
     // =========================================================
-    // 5. STAFF/ADMIN hủy Daily Visitor cho khách tại quầy
+    // 5. STAFF/ADMIN hủy đăng ký khách tại quầy
     // =========================================================
+
     @Transactional
     public DailyVisitorParticipant cancelWalkInByStaff(
             Long participantId,
             Long staffId) {
 
+        requireStaff(staffId);
+
         DailyVisitorParticipant participant =
-                participantRepository.findById(participantId)
-                        .orElseThrow(() -> new BusinessException(
-                                HttpStatus.NOT_FOUND,
-                                "Không tìm thấy lượt đăng ký"
-                        ));
+                findParticipantForUpdate(participantId);
+
+        if (participant.getUser() != null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Đây là khách có tài khoản, khách phải tự hủy trên web"
+            );
+        }
+
+        return cancelParticipant(participant);
+    }
+
+    // =========================================================
+    // Các hàm hỗ trợ
+    // =========================================================
+
+    private void validateSessionId(Long sessionId) {
+        if (sessionId == null || sessionId <= 0) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Vui lòng chọn buổi chơi hợp lệ"
+            );
+        }
+    }
+
+    private void validateCustomerCanRegister(User user) {
+
+        if (!"CUSTOMER".equals(user.getRole())) {
+            throw new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "Chỉ khách hàng mới có thể tự đăng ký lượt chơi"
+            );
+        }
+
+        if (!Boolean.TRUE.equals(user.getPhoneVerified())) {
+            throw new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "Vui lòng xác minh số điện thoại trước khi đăng ký chơi"
+            );
+        }
+
+        if ("SUSPENDED".equals(user.getStatus())) {
+            throw new BusinessException(
+                    HttpStatus.FORBIDDEN,
+                    "Tài khoản đã bị khóa nên không thể đăng ký lượt chơi"
+            );
+        }
+
+        if (user.getFullName() == null
+                || user.getFullName().isBlank()) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    "Vui lòng cập nhật họ tên trước khi đăng ký"
+            );
+        }
+    }
+
+    private void validateSessionCanRegister(
+            DailyVisitorSession session) {
+        if (!Boolean.TRUE.equals(session.getSchedule().getActive())
+                || !Boolean.TRUE.equals(session.getSchedule().getCourt().getActive())
+                || !Boolean.TRUE.equals(session.getSchedule().getCourt().getRoom().getActive())
+                || !Boolean.TRUE.equals(session.getSchedule().getCourt().getRoom().getCourtType().getActive())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Sân hoặc lịch vãng lai đang ngừng hoạt động");
+        }
+
+
+        if (!LocalDateTime.now().isBefore(getSessionStart(session))) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "Buổi chơi đã bắt đầu, không thể đăng ký thêm"
+            );
+        }
+
+        if (!"OPEN".equals(session.getStatus())) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    "Buổi chơi đã đầy hoặc không còn mở đăng ký"
+            );
+        }
+    }
+
+    private User requireStaff(Long staffId) {
+
+        if (staffId == null) {
+            throw new BusinessException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Không xác định được nhân viên đăng nhập"
+            );
+        }
 
         User staff = userRepository.findById(staffId)
                 .orElseThrow(() -> new BusinessException(
@@ -494,28 +485,61 @@ public class DailyVisitorParticipantService {
                 && !"ADMIN".equals(staff.getRole())) {
             throw new BusinessException(
                     HttpStatus.FORBIDDEN,
-                    "Chỉ STAFF hoặc ADMIN mới có thể hủy cho khách tại quầy"
+                    "Chỉ STAFF hoặc ADMIN được thực hiện thao tác này"
             );
         }
 
-        if (participant.getUser() != null) {
+        return staff;
+    }
+
+    private DailyVisitorParticipant findParticipantForUpdate(
+            Long participantId) {
+
+        if (participantId == null || participantId <= 0) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
-                    "Đây là khách có tài khoản, khách phải tự hủy trên web"
+                    "ID lượt đăng ký không hợp lệ"
             );
         }
+
+        DailyVisitorParticipant participant =
+                participantRepository.findById(participantId)
+                        .orElseThrow(() -> new BusinessException(
+                                HttpStatus.NOT_FOUND,
+                                "Không tìm thấy lượt đăng ký"
+                        ));
+
+        DailyVisitorSession lockedSession =
+                waitlistService.lockSession(
+                        participant.getSession().getId()
+                );
+
+        // Session có thể đã được tải khi đọc participant.
+        // Đọc lại sau khi lấy khóa để tránh dùng dữ liệu cũ.
+        entityManager.refresh(lockedSession);
+        entityManager.refresh(participant);
+
+        return participant;
+    }
+
+    private DailyVisitorParticipant cancelParticipant(
+            DailyVisitorParticipant participant) {
 
         validateParticipantCanBeCancelled(participant);
 
         DailyVisitorSession session = participant.getSession();
+
         validateSessionCanBeCancelled(session);
         validateCancellationDeadline(session);
 
         participant.setStatus("CANCELLED");
-        DailyVisitorParticipant savedParticipant =
-                participantRepository.save(participant);
 
-        reopenSessionIfFull(session);
+        DailyVisitorParticipant savedParticipant =
+                participantRepository.saveAndFlush(participant);
+
+        // Slot vừa trống được ưu tiên cho người đầu hàng.
+        waitlistService.processSession(session.getId());
+
         return savedParticipant;
     }
 
@@ -526,30 +550,21 @@ public class DailyVisitorParticipantService {
             return;
         }
 
+        String message;
+
         if ("CANCELLED".equals(participant.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt đăng ký đã được hủy trước đó"
-            );
-        }
-
-        if ("CHECKED_IN".equals(participant.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt đăng ký đã check-in nên không thể hủy"
-            );
-        }
-
-        if ("NO_SHOW".equals(participant.getStatus())) {
-            throw new BusinessException(
-                    HttpStatus.CONFLICT,
-                    "Lượt đăng ký đã bị đánh dấu NO_SHOW"
-            );
+            message = "Lượt đăng ký đã được hủy trước đó";
+        } else if ("CHECKED_IN".equals(participant.getStatus())) {
+            message = "Lượt đăng ký đã check-in nên không thể hủy";
+        } else if ("NO_SHOW".equals(participant.getStatus())) {
+            message = "Lượt đăng ký đã bị đánh dấu NO_SHOW";
+        } else {
+            message = "Trạng thái hiện tại không cho phép hủy";
         }
 
         throw new BusinessException(
                 HttpStatus.CONFLICT,
-                "Trạng thái hiện tại không cho phép hủy"
+                message
         );
     }
 
@@ -559,7 +574,7 @@ public class DailyVisitorParticipantService {
         if (session == null) {
             throw new BusinessException(
                     HttpStatus.NOT_FOUND,
-                    "Không tìm thấy lượt chơi"
+                    "Không tìm thấy buổi chơi"
             );
         }
 
@@ -567,7 +582,7 @@ public class DailyVisitorParticipantService {
                 || "CLOSED".equals(session.getStatus())) {
             throw new BusinessException(
                     HttpStatus.CONFLICT,
-                    "Lượt chơi đã bị hủy hoặc đã đóng"
+                    "Buổi chơi đã bị hủy hoặc đã đóng"
             );
         }
     }
@@ -575,26 +590,23 @@ public class DailyVisitorParticipantService {
     private void validateCancellationDeadline(
             DailyVisitorSession session) {
 
-        LocalDateTime sessionStart = LocalDateTime.of(
-                session.getSessionDate(),
-                session.getStartTime()
-        );
-        LocalDateTime cancelDeadline = sessionStart.minusMinutes(30);
+        LocalDateTime cancelDeadline =
+                getSessionStart(session).minusMinutes(30);
 
         if (!LocalDateTime.now().isBefore(cancelDeadline)) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
-                    "Chỉ được hủy trước giờ chơi ít nhất 30 phút"
+                    "Không thể hủy khi còn 30 phút hoặc ít hơn đến giờ chơi"
             );
         }
     }
 
-    private void reopenSessionIfFull(
+    private LocalDateTime getSessionStart(
             DailyVisitorSession session) {
 
-        if ("FULL".equals(session.getStatus())) {
-            session.setStatus("OPEN");
-            sessionRepository.save(session);
-        }
+        return LocalDateTime.of(
+                session.getSessionDate(),
+                session.getStartTime()
+        );
     }
 }

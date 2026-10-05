@@ -20,6 +20,13 @@ public class Room {
     @Column(nullable = false)
     private Boolean active = true;
 
+    // Explicit structure for new rooms, independent of display names such as P1-02.
+    @Column(name = "room_group", length = 30)
+    private String roomGroup;
+
+    public String getRoomGroup() { return roomGroup; }
+    public void setRoomGroup(String roomGroup) { this.roomGroup = roomGroup; }
+
     public Room() {
     }
 

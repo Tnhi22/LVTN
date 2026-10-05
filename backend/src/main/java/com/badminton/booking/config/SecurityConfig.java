@@ -10,6 +10,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
+
 
 @Configuration
 public class SecurityConfig {
@@ -38,14 +44,52 @@ public class SecurityConfig {
         return authenticationConverter;
     }
 
+
+        @Bean
+        public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173"
+        ));
+
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"
+        ));
+
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Accept"
+        ));
+
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration("/api/**", configuration);
+
+        return source;
+        }
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter)
             throws Exception {
 
-        http
-                .csrf(csrf -> csrf.disable())
+                http
+                        .cors(cors -> cors.configurationSource(
+                                corsConfigurationSource()
+                        ))
+                        .csrf(csrf -> csrf.disable())
 
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
@@ -124,12 +168,12 @@ public class SecurityConfig {
 
 
                         // Chỉ ADMIN được tạo sản phẩm
+                        // Đường dẫn cụ thể phải đặt trước đường dẫn tổng quát.
                         .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/products"
+                                HttpMethod.GET,
+                                "/api/products/admin"
                         ).hasRole("ADMIN")
 
-                        // STAFF và ADMIN được xem sản phẩm
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/products/**"
@@ -203,6 +247,26 @@ public class SecurityConfig {
                                 HttpMethod.POST,
                                 "/api/court-reviews/*/reply"
                         ).hasAnyRole("STAFF", "ADMIN")
+
+
+
+                        // CUSTOMER sử dụng danh sách chờ của chính mình.
+                .requestMatchers(
+                        "/api/daily-visitor-waitlists/**"
+                ).hasRole("CUSTOMER")
+
+                // CUSTOMER hủy slot đánh vãng lai của chính mình.
+                .requestMatchers(
+                        HttpMethod.DELETE,
+                        "/api/daily-visitor-participants/*/cancel"
+                ).hasRole("CUSTOMER")
+
+                // STAFF/ADMIN hủy đăng ký khách tại quầy.
+                .requestMatchers(
+                        HttpMethod.DELETE,
+                        "/api/daily-visitor-participants/*/staff-cancel",
+                        "/api/bookings/*/cancel-walk-in"
+                ).hasAnyRole("STAFF", "ADMIN")
 
 
                         // Các API còn lại phải đăng nhập

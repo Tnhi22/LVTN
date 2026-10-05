@@ -649,11 +649,13 @@ public class BookingController {
 
         long minutesUntilStart = Duration.between(now, bookingStart).toMinutes();
 
-        if (minutesUntilStart < 120) {
-            throw new BusinessException(
-                    HttpStatus.BAD_REQUEST,
-                    "Chỉ được hủy sân trước ít nhất 2 tiếng"
-            );
+        LocalDateTime cancellationDeadline = bookingStart.minusMinutes(30);
+
+        if (!now.isBefore(cancellationDeadline)) {
+        throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "Không thể hủy booking khi còn 30 phút hoặc ít hơn đến giờ chơi"
+        );
         }
         booking.setStatus("CANCELLED");
         booking.setCancelledAt(now);
@@ -747,6 +749,7 @@ public class BookingController {
         booking.setCancelledByStaffId(staff.getId());
         booking.setCancelledByStaffName(staff.getFullName());
         booking.setCancelledAt(now);
+        bookingInventoryService.releaseReservation(booking);
 
         return bookingRepository.save(booking);
     }

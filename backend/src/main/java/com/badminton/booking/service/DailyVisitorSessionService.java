@@ -45,11 +45,18 @@ public class DailyVisitorSessionService {
 
     // Tạo session cho một ngày cụ thể
     @Transactional
-    public List<DailyVisitorSession> generateSessions(
-            LocalDate date) {
+    public List<DailyVisitorSession> generateSessions(LocalDate date) {
+        return generateSessions(date, null);
+    }
 
-        List<DailyVisitorSchedule> schedules =
-                scheduleRepository.findByActiveTrue();
+    @Transactional
+    public List<DailyVisitorSession> generateSessionsForSchedule(LocalDate date, Long scheduleId) {
+        return generateSessions(date, scheduleId);
+    }
+
+    private List<DailyVisitorSession> generateSessions(LocalDate date, Long scheduleId) {
+        List<DailyVisitorSchedule> schedules = scheduleRepository.findByActiveTrue().stream()
+                .filter(s -> scheduleId == null || scheduleId.equals(s.getId())).toList();
 
         List<DailyVisitorSession> sessions =
                 new ArrayList<>();
@@ -71,6 +78,9 @@ public class DailyVisitorSessionService {
         }
 
         for (DailyVisitorSchedule schedule : schedules) {
+            if (!Boolean.TRUE.equals(schedule.getCourt().getActive())
+                    || !Boolean.TRUE.equals(schedule.getCourt().getRoom().getActive())
+                    || !Boolean.TRUE.equals(schedule.getCourt().getRoom().getCourtType().getActive())) continue;
 
             boolean exists =
                     sessionRepository
