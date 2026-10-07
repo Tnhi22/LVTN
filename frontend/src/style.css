@@ -1147,5 +1147,24 @@ textarea {
 
   .landing-court-card:hover .court-art img {
     transform: none;
+ 
+ 
+ 
+  }
+
+
+
+    .account-actions {
+    display: grid;
+    grid-template-columns: 80px 70px 70px 125px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .account-actions button {
+    width: 100%;
+    height: 38px;
+    padding: 0 10px;
+    white-space: nowrap;
   }
 }
