@@ -1,7 +1,6 @@
 package com.badminton.booking.entity;
 
 import jakarta.persistence.*;
-
 import java.time.LocalDateTime;
 
 @Entity
@@ -12,25 +11,20 @@ public class CourtMaintenance {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Sân nào đang/đã được bảo trì
     @ManyToOne
     @JoinColumn(name = "court_id", nullable = false)
     private Court court;
 
-    // EMERGENCY: sự cố đột xuất
-    // SCHEDULED: bảo trì có kế hoạch
+    // EMERGENCY / SCHEDULED
     @Column(nullable = false)
     private String type;
 
-    // Lý do bảo trì
     @Column(nullable = false)
     private String reason;
 
-    // Thời gian bắt đầu bảo trì
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;
 
-    // Thời gian dự kiến kết thúc
     @Column(name = "end_time")
     private LocalDateTime endTime;
 
@@ -38,22 +32,21 @@ public class CourtMaintenance {
     @Column(nullable = false)
     private String status;
 
-    // Chi phí bảo trì
     @Column(name = "maintenance_cost")
     private Long maintenanceCost;
 
-    // STAFF/ADMIN tạo yêu cầu bảo trì
     @ManyToOne
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
-    // Thời điểm tạo bản ghi
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    // Thời điểm thực tế hoàn thành bảo trì
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
+
+    @Column(name = "repair_detail", columnDefinition = "TEXT")
+    private String repairDetail;
 
     public CourtMaintenance() {
     }
@@ -145,5 +138,13 @@ public class CourtMaintenance {
 
     public void setCompletedAt(LocalDateTime completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public String getRepairDetail() {
+        return repairDetail;
+    }
+
+    public void setRepairDetail(String repairDetail) {
+        this.repairDetail = repairDetail;
     }
 }

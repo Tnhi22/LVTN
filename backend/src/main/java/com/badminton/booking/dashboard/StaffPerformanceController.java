@@ -36,20 +36,30 @@ public class StaffPerformanceController {
             Long paidDailyVisitorRegistrations,
             Long cashCollected,
             Long bankTransferCollected,
-            Long totalCollected
+            Long totalCollected,
+            Long dailyVisitorCollected
     ) {}
 
     @GetMapping
     @Transactional(readOnly = true)
     public List<StaffPerformance> getStaffPerformance(
-            @RequestParam(required = false) LocalDate date) {
+            @RequestParam(required = false) LocalDate date,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            org.springframework.security.core.Authentication authentication) {
 
+        if (authentication == null || authentication.getAuthorities().stream().noneMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())))
+            throw new com.badminton.booking.exception.BusinessException(org.springframework.http.HttpStatus.FORBIDDEN, "Chỉ quản trị viên được xem thống kê");
+        if ((from == null) != (to == null))
+            throw new com.badminton.booking.exception.BusinessException(org.springframework.http.HttpStatus.BAD_REQUEST, "Cần chọn đủ ngày bắt đầu và kết thúc");
+        if (from != null && (from.isAfter(to) || java.time.temporal.ChronoUnit.DAYS.between(from,to) > 365))
+            throw new com.badminton.booking.exception.BusinessException(org.springframework.http.HttpStatus.BAD_REQUEST, "Khoảng ngày không hợp lệ, tối đa 366 ngày");
         LocalDate targetDate = date != null
                 ? date
                 : LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
 
-        LocalDateTime start = targetDate.atStartOfDay();
-        LocalDateTime end = targetDate.plusDays(1).atStartOfDay();
+        LocalDateTime start = (from != null ? from : targetDate).atStartOfDay();
+        LocalDateTime end = (to != null ? to : targetDate).plusDays(1).atStartOfDay();
 
         return userRepository.findAll().stream()
                 .filter(user -> "STAFF".equals(user.getRole()))
@@ -106,7 +116,7 @@ public class StaffPerformanceController {
                 .setParameter("end", end)
                 .getSingleResult();
 
-        long cash = normalCash + dailyCash;
+        long cash = normalCash;
 
         return new StaffPerformance(
                 staffId,
@@ -116,7 +126,8 @@ public class StaffPerformanceController {
                 paidDailyRegistrations,
                 cash,
                 transfer,
-                cash + transfer
+                cash + transfer + dailyCash,
+                dailyCash
         );
     }
 
@@ -130,10 +141,10 @@ public class StaffPerformanceController {
                 SELECT COALESCE(SUM(b.totalAmount), 0)
                 FROM NormalBooking b
                 WHERE b.status = 'COMPLETED'
-                  AND b.completedBy = :staffId
+                  AND b.paidBy = :staffId
                   AND b.paymentMethod = :method
-                  AND b.completedAt >= :start
-                  AND b.completedAt < :end
+                  AND b.paidAt >= :start
+                  AND b.paidAt < :end
                 """, Long.class)
                 .setParameter("staffId", staffId)
                 .setParameter("method", method)

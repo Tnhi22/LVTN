@@ -82,6 +82,9 @@ public class Product {
     @Column(name = "piece_price")
     private Long piecePrice;
 
+    @Column(name = "detail", columnDefinition = "TEXT")
+    private String detail;
+
     public Product() {
     }
 
@@ -254,5 +257,16 @@ public class Product {
 
     public void setPiecePrice(Long piecePrice) {
         this.piecePrice = piecePrice;
+    }
+
+
+
+
+    public String getDetail() {
+    return detail;
+    }
+
+    public void setDetail(String detail) {
+        this.detail = detail;
     }
 }

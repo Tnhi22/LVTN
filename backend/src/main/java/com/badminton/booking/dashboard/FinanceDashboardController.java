@@ -33,9 +33,12 @@ public class FinanceDashboardController {
     @Transactional(readOnly = true)
     public FinanceSummary getSummary(
             @RequestParam LocalDate from,
-            @RequestParam LocalDate to) {
+            @RequestParam LocalDate to,
+            org.springframework.security.core.Authentication authentication) {
 
-        if (from.isAfter(to)) {
+        if (authentication == null || authentication.getAuthorities().stream().noneMatch(a -> "ROLE_ADMIN".equals(a.getAuthority())))
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Chỉ quản trị viên được xem doanh thu");
+        if (from.isAfter(to) || java.time.temporal.ChronoUnit.DAYS.between(from,to) > 365) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
                     "Ngày bắt đầu không được sau ngày kết thúc"
@@ -51,8 +54,8 @@ public class FinanceDashboardController {
                 SELECT COALESCE(SUM(b.totalAmount), 0)
                 FROM NormalBooking b
                 WHERE b.status = 'COMPLETED'
-                  AND b.completedAt >= :start
-                  AND b.completedAt < :end
+                  AND b.paidAt >= :start
+                  AND b.paidAt < :end
                 """, Long.class)
                 .setParameter("start", start)
                 .setParameter("end", end)

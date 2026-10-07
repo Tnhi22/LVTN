@@ -10,6 +10,7 @@ public record ProductUpdateRequest(
         @Positive Long piecePrice,
         @NotBlank String imageUrl,
         @NotNull @PositiveOrZero Integer minimumStockTubes,
-        @NotNull @Positive Integer targetStockTubes
+        @NotNull @Positive Integer targetStockTubes,
+        @NotBlank String detail
 ) {
 }

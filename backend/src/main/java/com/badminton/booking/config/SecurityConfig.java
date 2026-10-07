@@ -268,6 +268,9 @@ public class SecurityConfig {
                         "/api/bookings/*/cancel-walk-in"
                 ).hasAnyRole("STAFF", "ADMIN")
 
+                .requestMatchers(HttpMethod.POST, "/api/products/images")
+                .hasRole("ADMIN")
+
 
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()

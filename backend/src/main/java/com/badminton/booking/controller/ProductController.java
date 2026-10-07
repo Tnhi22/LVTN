@@ -10,7 +10,9 @@ import jakarta.validation.Valid;
 
 import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Transactional;
-
+import com.badminton.booking.service.ProductImageService;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.Map;
 import java.util.Objects;
 
 
@@ -24,13 +26,15 @@ import java.util.List;
 @RequestMapping("/api/products")
 public class ProductController {
 
-    private final ProductRepository productRepository;
+        private final ProductRepository productRepository;
+        private final ProductImageService productImageService;
 
-    public ProductController(
-            ProductRepository productRepository) {
+        public ProductController(
+                ProductRepository productRepository,
+                ProductImageService productImageService) {
         this.productRepository = productRepository;
-    }
-
+        this.productImageService = productImageService;
+        }
     // ADMIN tạo sản phẩm bằng JSON
     // imageUrl hiện chỉ được lưu dưới dạng String
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -91,6 +95,8 @@ public class ProductController {
         product.setName(normalizedName);
         product.setBrand(product.getBrand().trim());
         product.setImageUrl(product.getImageUrl().trim());
+
+
 
         // Tồn kho sẽ được nhập bằng nghiệp vụ nhập kho sau
         product.setActive(true);
@@ -200,6 +206,11 @@ public class ProductController {
         product.setTubePrice(request.tubePrice());
         product.setPiecePrice(request.piecePrice());
         product.setImageUrl(request.imageUrl().trim());
+
+        product.setDetail(
+        request.detail() == null ? null : request.detail().trim()
+        );
+
         product.setMinimumStockTubes(request.minimumStockTubes());
         product.setTargetStockTubes(request.targetStockTubes());
 
@@ -229,4 +240,18 @@ public class ProductController {
                         "Không tìm thấy sản phẩm"
                 ));
         }
+
+
+
+        @PostMapping(
+        value = "/images",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+        )
+        public Map<String, String> uploadProductImage(
+                @RequestParam("image") MultipartFile image) {
+        return Map.of(
+                "imageUrl",
+                productImageService.saveImage(image)
+        );
+}
 }
