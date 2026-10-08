@@ -272,6 +272,8 @@ public class SecurityConfig {
                 .hasRole("ADMIN")
 
 
+                        .requestMatchers("/api/staff/dashboard/**").hasAnyRole("STAFF", "ADMIN")
+
                         // Các API còn lại phải đăng nhập
                         .anyRequest().authenticated()
                 )

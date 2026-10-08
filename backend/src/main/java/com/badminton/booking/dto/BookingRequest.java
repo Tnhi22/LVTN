@@ -6,113 +6,121 @@ import java.util.List;
 
 public class BookingRequest {
 
-    private Long userId;
+  private Long userId;
 
-    // Giữ lại để tương thích booking một sân cũ
-    private Long courtId;
+  // Giữ lại để tương thích booking một sân cũ
+  private Long courtId;
 
-    // Booking nhiều sân
-    private List<Long> courtIds;
+  // Booking nhiều sân
+  private List<Long> courtIds;
 
-    private LocalDate bookingDate;
-    private LocalTime startTime;
-    private LocalTime endTime;
+  private LocalDate bookingDate;
+  private LocalTime startTime;
+  private LocalTime endTime;
 
-    private String walkInName;
-    private String walkInPhone;
+  private String walkInName;
+  private String walkInPhone;
 
-    /*
-     * Sản phẩm ống cầu khách muốn đặt kèm.
-     * Có thể null nếu khách không mua cầu.
-     */
-    private Long productId;
+  /*
+   * Sản phẩm ống cầu khách muốn đặt kèm.
+   * Có thể null nếu khách không mua cầu.
+   */
+  private Long productId;
 
-    /*
-     * Số ống cầu khách muốn đặt.
-     * Null hoặc 0 nghĩa là không mua.
-     */
-    private Integer quantityTubes;
+  /*
+   * Số ống cầu khách muốn đặt.
+   * Null hoặc 0 nghĩa là không mua.
+   */
+  private Integer quantityTubes;
+  private Integer quantityPieces;
 
-    public BookingRequest() {
-    }
+  public Integer getQuantityPieces() {
+    return quantityPieces;
+  }
 
-    public Long getUserId() {
-        return userId;
-    }
+  public void setQuantityPieces(Integer quantityPieces) {
+    this.quantityPieces = quantityPieces;
+  }
 
-    public void setUserId(Long userId) {
-        this.userId = userId;
-    }
+  public BookingRequest() {}
 
-    public Long getCourtId() {
-        return courtId;
-    }
+  public Long getUserId() {
+    return userId;
+  }
 
-    public void setCourtId(Long courtId) {
-        this.courtId = courtId;
-    }
+  public void setUserId(Long userId) {
+    this.userId = userId;
+  }
 
-    public List<Long> getCourtIds() {
-        return courtIds;
-    }
+  public Long getCourtId() {
+    return courtId;
+  }
 
-    public void setCourtIds(List<Long> courtIds) {
-        this.courtIds = courtIds;
-    }
+  public void setCourtId(Long courtId) {
+    this.courtId = courtId;
+  }
 
-    public LocalDate getBookingDate() {
-        return bookingDate;
-    }
+  public List<Long> getCourtIds() {
+    return courtIds;
+  }
 
-    public void setBookingDate(LocalDate bookingDate) {
-        this.bookingDate = bookingDate;
-    }
+  public void setCourtIds(List<Long> courtIds) {
+    this.courtIds = courtIds;
+  }
 
-    public LocalTime getStartTime() {
-        return startTime;
-    }
+  public LocalDate getBookingDate() {
+    return bookingDate;
+  }
 
-    public void setStartTime(LocalTime startTime) {
-        this.startTime = startTime;
-    }
+  public void setBookingDate(LocalDate bookingDate) {
+    this.bookingDate = bookingDate;
+  }
 
-    public LocalTime getEndTime() {
-        return endTime;
-    }
+  public LocalTime getStartTime() {
+    return startTime;
+  }
 
-    public void setEndTime(LocalTime endTime) {
-        this.endTime = endTime;
-    }
+  public void setStartTime(LocalTime startTime) {
+    this.startTime = startTime;
+  }
 
-    public String getWalkInName() {
-        return walkInName;
-    }
+  public LocalTime getEndTime() {
+    return endTime;
+  }
 
-    public void setWalkInName(String walkInName) {
-        this.walkInName = walkInName;
-    }
+  public void setEndTime(LocalTime endTime) {
+    this.endTime = endTime;
+  }
 
-    public String getWalkInPhone() {
-        return walkInPhone;
-    }
+  public String getWalkInName() {
+    return walkInName;
+  }
 
-    public void setWalkInPhone(String walkInPhone) {
-        this.walkInPhone = walkInPhone;
-    }
+  public void setWalkInName(String walkInName) {
+    this.walkInName = walkInName;
+  }
 
-    public Long getProductId() {
-        return productId;
-    }
+  public String getWalkInPhone() {
+    return walkInPhone;
+  }
 
-    public void setProductId(Long productId) {
-        this.productId = productId;
-    }
+  public void setWalkInPhone(String walkInPhone) {
+    this.walkInPhone = walkInPhone;
+  }
 
-    public Integer getQuantityTubes() {
-        return quantityTubes;
-    }
+  public Long getProductId() {
+    return productId;
+  }
 
-    public void setQuantityTubes(Integer quantityTubes) {
-        this.quantityTubes = quantityTubes;
-    }
+  public void setProductId(Long productId) {
+    this.productId = productId;
+  }
+
+  public Integer getQuantityTubes() {
+    return quantityTubes;
+  }
+
+  public void setQuantityTubes(Integer quantityTubes) {
+    this.quantityTubes = quantityTubes;
+  }
 }

@@ -4,6 +4,7 @@ import com.badminton.booking.dto.CourtMaintenanceRequest;
 import com.badminton.booking.entity.CourtMaintenance;
 import com.badminton.booking.exception.BusinessException;
 import com.badminton.booking.service.CourtMaintenanceService;
+import com.badminton.booking.service.MaintenanceEditService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,11 +21,14 @@ public class CourtMaintenanceController {
             maintenanceService;
 
     public CourtMaintenanceController(
-            CourtMaintenanceService maintenanceService) {
+            CourtMaintenanceService maintenanceService, MaintenanceEditService editService) {
 
         this.maintenanceService =
                 maintenanceService;
+        this.editService = editService;
     }
+
+    private final MaintenanceEditService editService;
 
     // STAFF hoặc ADMIN tạo lịch bảo trì/báo sự cố
     @PostMapping
@@ -92,24 +96,17 @@ public CourtMaintenance completeMaintenance(
     );
 }
 
-        // STAFF hoặc ADMIN hủy lịch bảo trì/sự cố
-        @PatchMapping("/{maintenanceId}/cancel")
-        public CourtMaintenance cancelMaintenance(
-                @PathVariable Long maintenanceId,
-                @AuthenticationPrincipal Jwt jwt) {
+    @PutMapping("/{maintenanceId}")
+    public CourtMaintenance updateMaintenance(@PathVariable Long maintenanceId,
+            @RequestBody CourtMaintenanceRequest request, @AuthenticationPrincipal Jwt jwt) {
+        if (jwt == null) throw new BusinessException(HttpStatus.UNAUTHORIZED, "Vui lòng đăng nhập");
+        return editService.update(maintenanceId, Long.valueOf(jwt.getSubject()), request);
+    }
 
-        if (jwt == null) {
-                throw new BusinessException(
-                        HttpStatus.UNAUTHORIZED,
-                        "Vui lòng đăng nhập"
-                );
-        }
-
-        Long staffId = Long.valueOf(jwt.getSubject());
-
-        return maintenanceService.cancelMaintenance(
-                maintenanceId,
-                staffId
-        );
-        }
+    @PatchMapping("/{maintenanceId}/cancel")
+    public CourtMaintenance cancelMaintenance(@PathVariable Long maintenanceId,
+            @RequestBody java.util.Map<String, String> request, @AuthenticationPrincipal Jwt jwt) {
+        if (jwt == null) throw new BusinessException(HttpStatus.UNAUTHORIZED, "Vui lòng đăng nhập");
+        return editService.cancel(maintenanceId, Long.valueOf(jwt.getSubject()), request.get("reason"));
+    }
 }
