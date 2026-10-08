@@ -1,48 +1,138 @@
 <script setup>
-import { ref } from 'vue'
-import { loginByPhone } from '../services/authService'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import {
+  loginWithIdentifier,
+  normalizePhone,
+  registerCustomer,
+} from '../services/authService.js'
 
 const emit = defineEmits(['login-success'])
-
-const phone = ref('')
+const props = defineProps({ initialMode: { type: String, default: 'login' } })
+const mode = ref(props.initialMode)
+watch(
+  () => props.initialMode,
+  (value) => switchMode(value),
+)
+const identifier = ref('')
 const password = ref('')
 const showPassword = ref(false)
+const showRegisterPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+const successMessage = ref('')
+const identifierInput = ref(null)
+const nameInput = ref(null)
+const registration = reactive({
+  fullName: '',
+  phone: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+})
+const registering = computed(() => mode.value === 'register')
+const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+
+async function switchMode(nextMode) {
+  if (loading.value) return
+  mode.value = nextMode
+  errorMessage.value = ''
+  successMessage.value = ''
+  password.value = ''
+  registration.password = ''
+  registration.confirmPassword = ''
+  showPassword.value = false
+  showRegisterPassword.value = false
+  await nextTick()
+  if (nextMode === 'login') identifierInput.value?.focus()
+  else nameInput.value?.focus()
+}
 
 async function submitLogin() {
   if (loading.value) return
-
   errorMessage.value = ''
-
-  let normalizedPhone = phone.value.trim().replace(/[\s.-]/g, '')
-
-  if (normalizedPhone.startsWith('+84')) {
-    normalizedPhone = `0${normalizedPhone.slice(3)}`
-  }
-
-  if (!/^0[35789]\d{8}$/.test(normalizedPhone)) {
-    errorMessage.value = 'Vui lòng nhập số điện thoại Việt Nam hợp lệ.'
+  successMessage.value = ''
+  const value = identifier.value.trim()
+  if (value.includes('@')) {
+    if (!validEmail(value)) {
+      errorMessage.value = 'Vui lòng nhập email hợp lệ.'
+      return
+    }
+  } else if (!/^0[35789]\d{8}$/.test(normalizePhone(value))) {
+    errorMessage.value = 'Vui lòng nhập email hoặc số điện thoại Việt Nam hợp lệ.'
     return
   }
-
   if (!password.value.trim()) {
     errorMessage.value = 'Vui lòng nhập mật khẩu.'
     return
   }
-
+  if (new TextEncoder().encode(password.value).length > 72) {
+    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.'
+    return
+  }
   loading.value = true
-
   try {
-    const result = await loginByPhone({
-      phone: normalizedPhone,
+    const result = await loginWithIdentifier({
+      identifier: value,
       password: password.value,
     })
-
     password.value = ''
+    showPassword.value = false
     emit('login-success', result)
   } catch (error) {
     errorMessage.value = error.message || 'Không thể đăng nhập.'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function submitRegister() {
+  if (loading.value) return
+  errorMessage.value = ''
+  successMessage.value = ''
+  if (!registration.fullName.trim()) {
+    errorMessage.value = 'Vui lòng nhập họ và tên.'
+    return
+  }
+  if (!/^0[35789]\d{8}$/.test(normalizePhone(registration.phone))) {
+    errorMessage.value = 'Vui lòng nhập số điện thoại Việt Nam hợp lệ.'
+    return
+  }
+  if (!validEmail(registration.email.trim())) {
+    errorMessage.value = 'Vui lòng nhập email hợp lệ.'
+    return
+  }
+  if (registration.password.trim().length === 0 || registration.password.length < 8) {
+    errorMessage.value = 'Mật khẩu phải có ít nhất 8 ký tự.'
+    return
+  }
+  if (new TextEncoder().encode(registration.password).length > 72) {
+    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.'
+    return
+  }
+  if (registration.password !== registration.confirmPassword) {
+    errorMessage.value = 'Mật khẩu xác nhận không khớp.'
+    return
+  }
+  loading.value = true
+  try {
+    const result = await registerCustomer({ ...registration })
+    identifier.value = registration.email.trim().toLowerCase()
+    Object.assign(registration, {
+      fullName: '',
+      phone: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+    })
+    password.value = ''
+    showRegisterPassword.value = false
+    mode.value = 'login'
+    successMessage.value = result.message
+    loading.value = false
+    await nextTick()
+    identifierInput.value?.focus()
+  } catch (error) {
+    errorMessage.value = error.message || 'Không thể đăng ký.'
   } finally {
     loading.value = false
   }
@@ -54,55 +144,78 @@ async function submitLogin() {
     <div class="login-layout">
       <aside class="login-intro">
         <p class="intro-label">CARROT BADMINTON</p>
-
-        <h1>
-          Trở lại sân.<br />
-          Tiếp nối đam mê.
-        </h1>
-
+        <h1 v-if="registering">Bắt đầu hành trình.<br />Hẹn nhau trên sân.</h1>
+        <h1 v-else>Trở lại sân.<br />Tiếp nối đam mê.</h1>
         <p class="intro-description">
-          Đăng nhập để chọn lịch chơi, quản lý đặt sân và kết nối
-          những người cùng đam mê cầu lông.
+          {{
+            registering
+              ? 'Tạo tài khoản để chọn giờ chơi, đặt sân và theo dõi những buổi chơi của riêng bạn.'
+              : 'Đăng nhập bằng email hoặc số điện thoại để chọn lịch chơi và quản lý đặt sân.'
+          }}
         </p>
-
         <div class="intro-features">
           <div><span>01</span> Chủ động lịch chơi</div>
-          <div><span>02</span> Theo dõi đăng ký của bạn</div>
-          <div><span>03</span> Khám phá các buổi chơi chung</div>
+          <div><span>02</span> Theo dõi booking của bạn</div>
+          <div><span>03</span> Quản lý thông tin cá nhân</div>
         </div>
-
         <a href="#home" class="back-link">← Về trang chủ</a>
-
-        <div class="court-decoration" aria-hidden="true">
-          <span></span>
-        </div>
+        <div class="court-decoration" aria-hidden="true"><span></span></div>
       </aside>
-
       <div class="login-card">
-        <p class="form-label">CHÀO MỪNG BẠN TRỞ LẠI</p>
-        <h2>Đăng nhập</h2>
-        <p class="form-description">
-          Sử dụng số điện thoại và mật khẩu của bạn.
+        <p class="form-label">
+          {{ registering ? 'CHÀO MỪNG THÀNH VIÊN MỚI' : 'CHÀO MỪNG BẠN TRỞ LẠI' }}
         </p>
-
-        <form :aria-busy="loading" @submit.prevent="submitLogin">
+        <div class="auth-switch" role="group" aria-label="Chọn đăng nhập hoặc đăng ký">
+          <button
+            type="button"
+            :class="{ active: !registering }"
+            :aria-pressed="!registering"
+            :disabled="loading"
+            @click="switchMode('login')"
+          >
+            Đăng nhập
+          </button>
+          <button
+            type="button"
+            :class="{ active: registering }"
+            :aria-pressed="registering"
+            :disabled="loading"
+            @click="switchMode('register')"
+          >
+            Đăng ký
+          </button>
+        </div>
+        <h2>{{ registering ? 'Tạo tài khoản' : 'Đăng nhập' }}</h2>
+        <p class="form-description">
+          {{
+            registering
+              ? 'Điền thông tin để tạo tài khoản khách hàng.'
+              : 'Sử dụng email hoặc số điện thoại và mật khẩu của bạn.'
+          }}
+        </p>
+        <p v-if="successMessage" class="auth-success" role="status">
+          {{ successMessage }}
+        </p>
+        <form v-if="!registering" :aria-busy="loading" @submit.prevent="submitLogin">
           <div class="field">
-            <label for="login-phone">Số điện thoại</label>
+            <label for="login-identifier">Email hoặc số điện thoại</label>
             <input
-              id="login-phone"
-              v-model="phone"
-              name="phone"
-              type="tel"
+              id="login-identifier"
+              ref="identifierInput"
+              v-model="identifier"
+              name="username"
+              type="text"
               autocomplete="username"
-              placeholder="Nhập số điện thoại"
+              autocapitalize="none"
+              :spellcheck="false"
+              placeholder="Email hoặc số điện thoại"
+              maxlength="255"
               :disabled="loading"
               required
             />
           </div>
-
           <div class="field">
             <label for="login-password">Mật khẩu</label>
-
             <div class="password-field">
               <input
                 id="login-password"
@@ -114,7 +227,6 @@ async function submitLogin() {
                 :disabled="loading"
                 required
               />
-
               <button
                 type="button"
                 :aria-label="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
@@ -127,29 +239,128 @@ async function submitLogin() {
               </button>
             </div>
           </div>
-
-          <p v-if="errorMessage" class="login-error" role="alert">
-            {{ errorMessage }}
-          </p>
-
-          <button
-            class="submit-button"
-            type="submit"
-            :disabled="loading"
-          >
-            {{ loading ? 'Đang đăng nhập…' : 'Đăng nhập' }}
-            <span v-if="!loading" aria-hidden="true">→</span>
+          <p v-if="errorMessage" class="login-error" role="alert">{{ errorMessage }}</p>
+          <button class="submit-button" type="submit" :disabled="loading">
+            {{ loading ? 'Đang đăng nhập…' : 'Đăng nhập'
+            }}<span v-if="!loading" aria-hidden="true">→</span>
           </button>
+          <p class="auth-footer">
+            Chưa có tài khoản?
+            <button type="button" :disabled="loading" @click="switchMode('register')">
+              Đăng ký ngay
+            </button>
+          </p>
         </form>
-
+        <form v-else :aria-busy="loading" @submit.prevent="submitRegister">
+          <div class="field">
+            <label for="register-name">Họ và tên</label
+            ><input
+              id="register-name"
+              ref="nameInput"
+              v-model="registration.fullName"
+              name="fullName"
+              autocomplete="name"
+              placeholder="Nhập họ và tên"
+              maxlength="255"
+              :disabled="loading"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="register-phone">Số điện thoại</label
+            ><input
+              id="register-phone"
+              v-model="registration.phone"
+              name="phone"
+              type="tel"
+              autocomplete="tel"
+              placeholder="Ví dụ: 0901234567"
+              maxlength="30"
+              :disabled="loading"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="register-email">Email</label
+            ><input
+              id="register-email"
+              v-model="registration.email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              autocapitalize="none"
+              :spellcheck="false"
+              placeholder="ban@example.com"
+              maxlength="255"
+              :disabled="loading"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="register-password">Mật khẩu</label>
+            <div class="password-field">
+              <input
+                id="register-password"
+                v-model="registration.password"
+                name="newPassword"
+                :type="showRegisterPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                placeholder="Ít nhất 8 ký tự"
+                minlength="8"
+                maxlength="72"
+                :disabled="loading"
+                required
+              /><button
+                type="button"
+                :aria-label="showRegisterPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
+                :aria-pressed="showRegisterPassword"
+                aria-controls="register-password register-confirm"
+                :disabled="loading"
+                @click="showRegisterPassword = !showRegisterPassword"
+              >
+                {{ showRegisterPassword ? 'Ẩn' : 'Hiện' }}
+              </button>
+            </div>
+            <small class="field-help">Ít nhất 8 ký tự, tối đa 72 byte.</small>
+          </div>
+          <div class="field">
+            <label for="register-confirm">Xác nhận mật khẩu</label
+            ><input
+              id="register-confirm"
+              v-model="registration.confirmPassword"
+              name="confirmPassword"
+              :type="showRegisterPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              placeholder="Nhập lại mật khẩu"
+              minlength="8"
+              maxlength="72"
+              :disabled="loading"
+              required
+            />
+          </div>
+          <p v-if="errorMessage" class="login-error" role="alert">{{ errorMessage }}</p>
+          <button class="submit-button" type="submit" :disabled="loading">
+            {{ loading ? 'Đang tạo tài khoản…' : 'Tạo tài khoản'
+            }}<span v-if="!loading" aria-hidden="true">→</span>
+          </button>
+          <p class="auth-footer">
+            Đã có tài khoản?
+            <button type="button" :disabled="loading" @click="switchMode('login')">
+              Đăng nhập
+            </button>
+          </p>
+        </form>
         <p class="form-note">
-          Thông tin đăng nhập được kiểm tra bởi hệ thống Carrot.
+          {{
+            registering
+              ? 'Sau khi đăng ký, bạn có thể đăng nhập bằng email hoặc số điện thoại đã cung cấp.'
+              : 'Thông tin đăng nhập được kiểm tra bởi hệ thống Carrot.'
+          }}
         </p>
       </div>
     </div>
   </section>
 </template>
-
 <style scoped>
 .login-page {
   padding: clamp(24px, 5vw, 64px) 16px;
@@ -449,5 +660,65 @@ a:focus-visible {
   .login-intro h1 {
     font-size: 28px;
   }
+}
+
+.auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 26px;
+  padding: 5px;
+  border: 1px solid #e0e9e1;
+  border-radius: 12px;
+  background: #f1f5ef;
+}
+.auth-switch button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7a887b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.auth-switch button.active {
+  background: #ffffff;
+  color: #005b35;
+  box-shadow: 0 2px 8px rgb(20 50 30 / 8%);
+}
+.auth-success {
+  padding: 13px;
+  border: 1px solid #cbe0cb;
+  border-radius: 10px;
+  background: #edf7ec;
+  color: #366a37;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.auth-footer {
+  margin: 21px 0 0;
+  text-align: center;
+  color: #7b877e;
+  font-size: 12px;
+}
+.auth-footer button {
+  border: 0;
+  background: none;
+  color: #005b35;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+  padding: 6px;
+}
+.field-help {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #849087;
+}
+.field input {
+  box-sizing: border-box;
 }
 </style>

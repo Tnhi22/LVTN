@@ -1,56 +1,1388 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { getAdminData } from '../services/adminService'
-const props=defineProps({auth:{type:Object,required:true},initialRange:{type:Object,default:null}})
-const emit=defineEmits(['session-expired'])
-const rows=ref([]),loading=ref(false),saving=ref(false),error=ref(''),success=ref(''),status=ref(props.initialRange?'':'active'),query=ref(''),page=ref(1)
-const detail=ref(null),dialog=ref(null),mode=ref('view'),cost=ref(''),repair=ref(''),formError=ref(''),now=ref(Date.now())
-const courts=ref([]),courtsLoading=ref(false),courtsError=ref(''),creation=ref(null),createDialog=ref(null)
-let disposed=false,timer,listController,actionController,courtsController
-const labels={SCHEDULED:'Đã lên lịch',IN_PROGRESS:'Đang xử lý',COMPLETED:'Đã hoàn tất',CANCELLED:'Đã hủy'}
-const money=n=>n==null?'—':new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(n)
-const timestamp=t=>t?Date.parse(/[Zz]|[+-]\d\d:\d\d$/.test(t)?t:`${t}+07:00`):NaN
-const date=t=>t?new Date(timestamp(t)).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'Chưa xác định'
-const active=r=>['SCHEDULED','IN_PROGRESS'].includes(r.status)
-const blocked=r=>!active(r)?'Lịch đã kết thúc.':timestamp(r.startTime)>now.value?'Chưa đến giờ bắt đầu.':''
-const usePeriod=ref(!!props.initialRange)
-watch(()=>props.initialRange,()=>{page.value=1},{deep:true})
-const inPeriod=r=>{if(!usePeriod.value||!props.initialRange)return true;const d=(r.status==='COMPLETED'?r.completedAt:r.startTime)?.slice(0,10);return !!d&&d>=props.initialRange.from&&d<=props.initialRange.to}
-const filtered=computed(()=>rows.value.filter(inPeriod).filter(r=>status.value==='active'?active(r):status.value?status.value===r.status:true).filter(r=>`${r.court?.name} ${r.reason} ${r.repairDetail||''} ${r.id}`.toLocaleLowerCase('vi').includes(query.value.toLocaleLowerCase('vi'))))
-const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/10)))
-const shown=computed(()=>filtered.value.slice((page.value-1)*10,page.value*10))
-const completedCost=computed(()=>filtered.value.filter(r=>r.status==='COMPLETED').reduce((sum,r)=>sum+Number(r.maintenanceCost||0),0))
-watch([status,query,usePeriod],()=>{page.value=1})
-watch(pages,n=>{page.value=Math.min(page.value,n)})
-watch(detail,async()=>{await nextTick();if(disposed)return;if(detail.value&&!dialog.value?.open)dialog.value?.showModal();else if(!detail.value)dialog.value?.close()})
-function message(e){if(e.status===401)emit('session-expired');return e.name==='AbortError'?'Yêu cầu hết thời gian. Tải lại để kiểm tra kết quả trước khi thử lại.':e.message}
-async function request(path,controller,options={}){const timer=setTimeout(()=>controller.abort(),15000);try{return await getAdminData(path,props.auth.accessToken,controller.signal,options)}finally{clearTimeout(timer)}}
-async function load(){if(saving.value)return;listController?.abort();const current=new AbortController();listController=current;loading.value=true;error.value='';try{const data=await request('/api/admin/maintenances',current);if(!Array.isArray(data))throw Error('Danh sách bảo trì không hợp lệ.');if(!disposed&&listController===current)rows.value=data}catch(e){if(!disposed&&listController===current)error.value=message(e)}finally{if(listController===current)loading.value=false}}
-function open(r,action='view'){detail.value=r;mode.value=action;cost.value=r.maintenanceCost??'';repair.value=r.repairDetail??'';formError.value=''}
-watch(creation,async()=>{await nextTick();if(disposed)return;if(creation.value&&!createDialog.value?.open)createDialog.value?.showModal();else if(!creation.value)createDialog.value?.close()})
-async function loadCourts(){courtsController?.abort();const current=new AbortController();courtsController=current;courtsLoading.value=true;courtsError.value='';try{const data=await request('/api/admin/courts',current);if(!Array.isArray(data))throw Error('Danh sách sân không hợp lệ.');if(!disposed&&courtsController===current)courts.value=data}catch(e){if(!disposed&&courtsController===current)courtsError.value=message(e)}finally{if(courtsController===current)courtsLoading.value=false}}
-function openCreate(){formError.value='';success.value='';creation.value={courtId:'',type:'SCHEDULED',reason:'',startTime:'',endTime:'',maintenanceCost:0};loadCourts()}
-function closeCreate(){if(saving.value)return;creation.value=null;createDialog.value?.close();courtsController?.abort()}
-function outsideCreate(e){if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeCreate()}
-async function createMaintenance(){
- if(saving.value||!creation.value)return
- const f=creation.value;formError.value=''
- if(courtsLoading.value||courtsError.value||!courts.value.some(c=>String(c.id)===String(f.courtId))){formError.value='Vui lòng chọn sân hợp lệ.';return}
- if(!f.reason.trim()){formError.value='Vui lòng nhập lý do bảo trì.';return}
- const start=f.startTime?timestamp(f.startTime):Date.now(),end=f.endTime?timestamp(f.endTime):null
- if(f.type==='SCHEDULED'&&(!f.startTime||!f.endTime||!Number.isFinite(start)||start<=Date.now())){formError.value='Bảo trì theo kế hoạch cần thời gian bắt đầu trong tương lai và thời gian kết thúc.';return}
- if(!Number.isFinite(start)||(end!==null&&(!Number.isFinite(end)||end<=start))){formError.value='Thời gian kết thúc phải sau thời gian bắt đầu.';return}
- if(f.maintenanceCost===''||!Number.isSafeInteger(Number(f.maintenanceCost))||Number(f.maintenanceCost)<0){formError.value='Chi phí phải là số nguyên không âm.';return}
- saving.value=true;actionController=new AbortController()
- try{await request('/api/court-maintenances',actionController,{method:'POST',body:JSON.stringify({courtId:Number(f.courtId),type:f.type,reason:f.reason.trim(),startTime:f.startTime?`${f.startTime}:00`:null,endTime:f.endTime?`${f.endTime}:00`:null,maintenanceCost:Number(f.maintenanceCost)})});if(disposed)return;saving.value=false;closeCreate();status.value='active';query.value='';usePeriod.value=false;page.value=1;success.value='Đã tạo lịch bảo trì. Bạn có thể duyệt hoàn tất sau khi sửa xong.';await load()}catch(e){if(!disposed)formError.value=message(e)}finally{saving.value=false}
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import MaintenanceActions from '../components/MaintenanceActions.vue';
+import { getAdminData } from '../services/adminService.js';
+const props = defineProps({
+  auth: { type: Object, required: true },
+  initialRange: { type: Object, default: null },
+});
+const creatorRole = ref('');
+const creatorRoleLabel = role => ({ ADMIN: 'Quản trị viên', STAFF: 'Nhân viên' }[role] || 'Chưa xác định');
+const initials = name => (name || '?').trim().split(/\s+/).slice(-2).map(word => word[0]).join('').toUpperCase();
+watch(creatorRole, () => { page.value = 1; });
+const maintenanceActions = ref(null);
+async function maintenanceChanged(message) {
+  success.value = message;
+  await load();
 }
-function close(){if(saving.value)return;detail.value=null;dialog.value?.close()}
-function outside(e){if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close()}
-async function complete(){if(saving.value||!detail.value)return;formError.value='';if(blocked(detail.value)){formError.value=blocked(detail.value);return}if(cost.value===''||!Number.isSafeInteger(Number(cost.value))||Number(cost.value)<0){formError.value='Chi phí phải là số nguyên không âm, nhập 0 nếu không phát sinh.';return}if(!repair.value.trim()||repair.value.trim().length>5000){formError.value='Nhập nội dung sửa chữa, tối đa 5000 ký tự.';return}saving.value=true;actionController=new AbortController();try{await request(`/api/admin/maintenances/${detail.value.id}/complete`,actionController,{method:'PATCH',body:JSON.stringify({maintenanceCost:Number(cost.value),repairDetail:repair.value.trim()})});if(disposed)return;saving.value=false;close();success.value='Đã duyệt hoàn tất, ghi nhận chi phí và nội dung sửa chữa.';await load()}catch(e){if(!disposed)formError.value=message(e)}finally{saving.value=false}}
-onMounted(()=>{load();timer=setInterval(()=>{now.value=Date.now()},15000)})
-onUnmounted(()=>{disposed=true;clearInterval(timer);listController?.abort();actionController?.abort();courtsController?.abort()})
+const emit = defineEmits(['session-expired']);
+const rows = ref([]),
+  loading = ref(false),
+  saving = ref(false),
+  error = ref(''),
+  success = ref(''),
+  status = ref(props.initialRange ? '' : 'active'),
+  query = ref(''),
+  page = ref(1);
+const detail = ref(null),
+  dialog = ref(null),
+  mode = ref('view'),
+  cost = ref(''),
+  repair = ref(''),
+  formError = ref(''),
+  now = ref(Date.now());
+const courts = ref([]),
+  courtsLoading = ref(false),
+  courtsError = ref(''),
+  creation = ref(null),
+  createDialog = ref(null);
+let disposed = false,
+  timer,
+  listController,
+  actionController,
+  courtsController;
+const labels = {
+  SCHEDULED: 'Đã lên lịch',
+  IN_PROGRESS: 'Đang xử lý',
+  COMPLETED: 'Đã hoàn tất',
+  CANCELLED: 'Đã hủy',
+};
+const money = (n) =>
+  n == null
+    ? '—'
+    : new Intl.NumberFormat('vi-VN', {
+        style: 'currency',
+        currency: 'VND',
+        maximumFractionDigits: 0,
+      }).format(n);
+const timestamp = (t) =>
+  t ? Date.parse(/[Zz]|[+-]\d\d:\d\d$/.test(t) ? t : `${t}+07:00`) : NaN;
+const date = (t) =>
+  t
+    ? new Date(timestamp(t)).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
+    : 'Chưa xác định';
+const active = (r) => ['SCHEDULED', 'IN_PROGRESS'].includes(r.status);
+const blocked = (r) =>
+  !active(r)
+    ? 'Lịch đã kết thúc.'
+    : timestamp(r.startTime) > now.value
+      ? 'Chưa đến giờ bắt đầu.'
+      : '';
+const usePeriod = ref(!!props.initialRange);
+watch(
+  () => props.initialRange,
+  () => {
+    page.value = 1;
+  },
+  { deep: true },
+);
+const inPeriod = (r) => {
+  if (!usePeriod.value || !props.initialRange) return true;
+  const d = (r.status === 'COMPLETED' ? r.completedAt : r.startTime)?.slice(0, 10);
+  return !!d && d >= props.initialRange.from && d <= props.initialRange.to;
+};
+const filtered = computed(() =>
+  rows.value
+    .filter(inPeriod)
+    .filter(r => !creatorRole.value || r.createdBy?.role === creatorRole.value)
+    .filter((r) =>
+      status.value === 'active'
+        ? active(r)
+        : status.value
+          ? status.value === r.status
+          : true,
+    )
+    .filter((r) =>
+      `${r.court?.name} ${r.reason} ${r.repairDetail || ''} ${r.id} ${r.createdBy?.fullName || ''}`
+        .toLocaleLowerCase('vi')
+        .includes(query.value.toLocaleLowerCase('vi')),
+    ),
+);
+const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / 10)));
+const shown = computed(() =>
+  filtered.value.slice((page.value - 1) * 10, page.value * 10),
+);
+const completedCost = computed(() =>
+  filtered.value
+    .filter((r) => r.status === 'COMPLETED')
+    .reduce((sum, r) => sum + Number(r.maintenanceCost || 0), 0),
+);
+watch([status, query, usePeriod], () => {
+  page.value = 1;
+});
+watch(pages, (n) => {
+  page.value = Math.min(page.value, n);
+});
+watch(detail, async () => {
+  await nextTick();
+  if (disposed) return;
+  if (detail.value && !dialog.value?.open) dialog.value?.showModal();
+  else if (!detail.value) dialog.value?.close();
+});
+function message(e) {
+  if (e.status === 401) emit('session-expired');
+  return e.name === 'AbortError'
+    ? 'Yêu cầu hết thời gian. Tải lại để kiểm tra kết quả trước khi thử lại.'
+    : e.message;
+}
+async function request(path, controller, options = {}) {
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    return await getAdminData(path, props.auth.accessToken, controller.signal, options);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function load() {
+  if (saving.value) return;
+  listController?.abort();
+  const current = new AbortController();
+  listController = current;
+  loading.value = true;
+  error.value = '';
+  try {
+    const data = await request('/api/admin/maintenances', current);
+    if (!Array.isArray(data)) throw Error('Danh sách bảo trì không hợp lệ.');
+    if (!disposed && listController === current) rows.value = data;
+  } catch (e) {
+    if (!disposed && listController === current) error.value = message(e);
+  } finally {
+    if (listController === current) loading.value = false;
+  }
+}
+function open(r, action = 'view') {
+  detail.value = r;
+  mode.value = action;
+  cost.value = r.maintenanceCost ?? '';
+  repair.value = r.repairDetail ?? '';
+  formError.value = '';
+}
+watch(creation, async () => {
+  await nextTick();
+  if (disposed) return;
+  if (creation.value && !createDialog.value?.open) createDialog.value?.showModal();
+  else if (!creation.value) createDialog.value?.close();
+});
+async function loadCourts() {
+  courtsController?.abort();
+  const current = new AbortController();
+  courtsController = current;
+  courtsLoading.value = true;
+  courtsError.value = '';
+  try {
+    const data = await request('/api/admin/courts', current);
+    if (!Array.isArray(data)) throw Error('Danh sách sân không hợp lệ.');
+    if (!disposed && courtsController === current) courts.value = data;
+  } catch (e) {
+    if (!disposed && courtsController === current) courtsError.value = message(e);
+  } finally {
+    if (courtsController === current) courtsLoading.value = false;
+  }
+}
+function openCreate() {
+  formError.value = '';
+  success.value = '';
+  creation.value = {
+    courtId: '',
+    type: 'SCHEDULED',
+    reason: '',
+    startTime: '',
+    endTime: '',
+    maintenanceCost: 0,
+  };
+  loadCourts();
+}
+function closeCreate() {
+  if (saving.value) return;
+  creation.value = null;
+  createDialog.value?.close();
+  courtsController?.abort();
+}
+function outsideCreate(e) {
+  if (e.target !== e.currentTarget) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  if (
+    e.clientX < r.left ||
+    e.clientX > r.right ||
+    e.clientY < r.top ||
+    e.clientY > r.bottom
+  )
+    closeCreate();
+}
+async function createMaintenance() {
+  if (saving.value || !creation.value) return;
+  const f = creation.value;
+  formError.value = '';
+  if (
+    courtsLoading.value ||
+    courtsError.value ||
+    !courts.value.some((c) => String(c.id) === String(f.courtId))
+  ) {
+    formError.value = 'Vui lòng chọn sân hợp lệ.';
+    return;
+  }
+  if (!f.reason.trim()) {
+    formError.value = 'Vui lòng nhập lý do bảo trì.';
+    return;
+  }
+  const start = f.startTime ? timestamp(f.startTime) : Date.now(),
+    end = f.endTime ? timestamp(f.endTime) : null;
+  if (
+    f.type === 'SCHEDULED' &&
+    (!f.startTime || !f.endTime || !Number.isFinite(start) || start <= Date.now())
+  ) {
+    formError.value =
+      'Bảo trì theo kế hoạch cần thời gian bắt đầu trong tương lai và thời gian kết thúc.';
+    return;
+  }
+  if (
+    !Number.isFinite(start) ||
+    (end !== null && (!Number.isFinite(end) || end <= start))
+  ) {
+    formError.value = 'Thời gian kết thúc phải sau thời gian bắt đầu.';
+    return;
+  }
+  if (
+    f.maintenanceCost === '' ||
+    !Number.isSafeInteger(Number(f.maintenanceCost)) ||
+    Number(f.maintenanceCost) < 0
+  ) {
+    formError.value = 'Chi phí phải là số nguyên không âm.';
+    return;
+  }
+  saving.value = true;
+  actionController = new AbortController();
+  try {
+    await request('/api/court-maintenances', actionController, {
+      method: 'POST',
+      body: JSON.stringify({
+        courtId: Number(f.courtId),
+        type: f.type,
+        reason: f.reason.trim(),
+        startTime: f.startTime ? `${f.startTime}:00` : null,
+        endTime: f.endTime ? `${f.endTime}:00` : null,
+        maintenanceCost: Number(f.maintenanceCost),
+      }),
+    });
+    if (disposed) return;
+    saving.value = false;
+    closeCreate();
+    status.value = 'active';
+    query.value = '';
+    usePeriod.value = false;
+    page.value = 1;
+    success.value = 'Đã tạo lịch bảo trì. Bạn có thể duyệt hoàn tất sau khi sửa xong.';
+    await load();
+  } catch (e) {
+    if (!disposed) formError.value = message(e);
+  } finally {
+    saving.value = false;
+  }
+}
+function close() {
+  if (saving.value) return;
+  detail.value = null;
+  dialog.value?.close();
+}
+function outside(e) {
+  if (e.target !== e.currentTarget) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  if (
+    e.clientX < r.left ||
+    e.clientX > r.right ||
+    e.clientY < r.top ||
+    e.clientY > r.bottom
+  )
+    close();
+}
+async function complete() {
+  if (saving.value || !detail.value) return;
+  formError.value = '';
+  if (blocked(detail.value)) {
+    formError.value = blocked(detail.value);
+    return;
+  }
+  if (
+    cost.value === '' ||
+    !Number.isSafeInteger(Number(cost.value)) ||
+    Number(cost.value) < 0
+  ) {
+    formError.value = 'Chi phí phải là số nguyên không âm, nhập 0 nếu không phát sinh.';
+    return;
+  }
+  if (!repair.value.trim() || repair.value.trim().length > 5000) {
+    formError.value = 'Nhập nội dung sửa chữa, tối đa 5000 ký tự.';
+    return;
+  }
+  saving.value = true;
+  actionController = new AbortController();
+  try {
+    await request(
+      `/api/admin/maintenances/${detail.value.id}/complete`,
+      actionController,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          maintenanceCost: Number(cost.value),
+          repairDetail: repair.value.trim(),
+        }),
+      },
+    );
+    if (disposed) return;
+    saving.value = false;
+    close();
+    success.value = 'Đã duyệt hoàn tất, ghi nhận chi phí và nội dung sửa chữa.';
+    await load();
+  } catch (e) {
+    if (!disposed) formError.value = message(e);
+  } finally {
+    saving.value = false;
+  }
+}
+onMounted(() => {
+  load();
+  timer = setInterval(() => {
+    now.value = Date.now();
+  }, 15000);
+});
+onUnmounted(() => {
+  disposed = true;
+  clearInterval(timer);
+  listController?.abort();
+  actionController?.abort();
+  courtsController?.abort();
+});
 </script>
-<template><div class="maintenance-workspace"><header class="hero"><div><span class="eyebrow">CARROT / BẢO TRÌ & SỰ CỐ</span><h2>Chăm sân tốt. Chơi an tâm.</h2><p>Theo dõi hư hỏng, xác nhận sửa xong và ghi nhận chi phí thực tế.</p></div><div class="actions"><button :disabled="loading||saving" @click="load">↻ Làm mới</button><button class="primary" :disabled="loading||saving" @click="openCreate">+ Bảo trì</button></div></header><p v-if="error" class="message error" role="alert">{{error}}</p><p v-if="success" class="message success" role="status">✓ {{success}}</p><div class="metrics"><article><small>CẦN XỬ LÝ / TOÀN BỘ</small><strong>{{rows.filter(active).length}}</strong></article><article><small>ĐÃ HOÀN TẤT / TOÀN BỘ</small><strong>{{rows.filter(r=>r.status==='COMPLETED').length}}</strong></article><article><small>CHI PHÍ HOÀN TẤT / BỘ LỌC</small><strong>{{money(completedCost)}}</strong></article></div><section class="panel"><div class="heading"><div><h3>Lịch bảo trì & lịch sử xử lý</h3><p>Chỉ duyệt hoàn tất sau khi sân đã được kiểm tra và sửa xong.</p></div></div><p v-if="initialRange" class="hint"><label><input v-model="usePeriod" type="checkbox"/> Lọc theo kỳ Tổng quan (hoàn tất theo ngày hoàn tất; lịch khác theo ngày bắt đầu). Bỏ chọn để xem mọi lịch cần xử lý.</label></p><div class="filters"><input v-model="query" placeholder="Tìm sân, hư hỏng, nội dung sửa…" aria-label="Tìm bảo trì"/><select v-model="status" aria-label="Lọc trạng thái"><option value="active">Cần xử lý</option><option value="">Tất cả lịch</option><option value="COMPLETED">Đã hoàn tất</option><option value="CANCELLED">Đã hủy</option><option value="SCHEDULED">Đã lên lịch</option><option value="IN_PROGRESS">Đang xử lý</option></select></div><div class="table-wrap"><table><thead><tr><th>Sân / loại</th><th>Hư hỏng / lý do</th><th>Thời gian</th><th>Trạng thái</th><th>Chi phí</th><th>Xử lý</th></tr></thead><tbody><tr v-for="r in shown" :key="r.id"><td><strong>{{r.court?.name}}</strong><small>{{r.type==='EMERGENCY'?'Sự cố đột xuất':'Bảo trì theo kế hoạch'}} · #{{r.id}}</small></td><td class="reason"><strong>{{r.reason}}</strong><small v-if="r.repairDetail">Đã sửa: {{r.repairDetail}}</small></td><td>{{date(r.startTime)}}<small>Dự kiến đến {{date(r.endTime)}}</small></td><td><span class="badge" :class="r.status">{{labels[r.status]||r.status}}</span><small v-if="r.completedAt">{{date(r.completedAt)}}</small></td><td><strong>{{money(r.maintenanceCost)}}</strong><small>{{r.status==='COMPLETED'?'Chi phí thực tế':'Chi phí đã ghi khi tạo lịch'}}</small></td><td><div class="actions"><button class="primary" v-if="active(r)" :disabled="loading||saving||!!blocked(r)" @click="open(r,'complete')">✓ Duyệt hoàn tất</button><button :disabled="saving" @click="open(r)">Chi tiết</button></div><small v-if="active(r)">{{blocked(r)}}</small></td></tr><tr v-if="!shown.length"><td colspan="6" class="empty">{{loading?'Đang tải…':'Không có lịch phù hợp.'}}</td></tr></tbody></table></div><footer class="pagination"><span>{{filtered.length}} lịch</span><button :disabled="page<=1" @click="page--">←</button><span>{{page}} / {{pages}}</span><button :disabled="page>=pages" @click="page++">→</button></footer></section><dialog ref="dialog" class="modal" aria-labelledby="maintenance-title" @cancel.prevent="close" @click="outside"><form v-if="detail" @submit.prevent="complete"><header class="modal-heading"><div><span class="eyebrow">{{mode==='complete'?'XÁC NHẬN SỬA XONG':'THÔNG TIN BẢO TRÌ'}}</span><h3 id="maintenance-title">{{detail.court?.name}} · #{{detail.id}}</h3></div><button type="button" :disabled="saving" aria-label="Đóng" @click="close">✕</button></header><div class="modal-body"><span class="badge" :class="detail.status">{{labels[detail.status]}}</span><div class="damage"><small>HƯ HỎNG / LÝ DO BAN ĐẦU</small><p>{{detail.reason}}</p></div><p class="hint">Bắt đầu: {{date(detail.startTime)}}<br/>Dự kiến kết thúc: {{date(detail.endTime)}}</p><template v-if="mode==='complete'"><label>Chi phí thực tế (VND)<input v-model="cost" type="number" min="0" step="1" required placeholder="Nhập 0 nếu không phát sinh chi phí" :disabled="saving"/></label><label>Nội dung hư hỏng và công việc đã sửa<textarea v-model="repair" rows="5" maxlength="5000" required placeholder="Ví dụ: Lưới bị rách; đã thay lưới mới, kiểm tra trụ và độ căng…" :disabled="saving"></textarea></label><p class="callout">Xác nhận sân đã sửa xong. Chi phí nhập ở đây là tổng chi phí thực tế, thay cho số đã ghi trước đó, không cộng thêm lần nữa.</p></template><template v-else><div class="total"><span>Chi phí {{detail.status==='COMPLETED'?'thực tế':'đã ghi'}}</span><strong>{{money(detail.maintenanceCost)}}</strong></div><div class="repair-detail"><small>NỘI DUNG ĐÃ SỬA</small><p>{{detail.repairDetail||'Chưa ghi nhận nội dung hoàn tất.'}}</p></div><p v-if="detail.completedAt" class="hint">Hoàn tất lúc {{date(detail.completedAt)}}</p></template><p v-if="formError" class="message error" role="alert">{{formError}}</p></div><footer class="modal-footer"><button type="button" :disabled="saving" @click="close">Đóng</button><button v-if="mode==='complete'" class="primary" :disabled="saving||!!blocked(detail)">{{saving?'Đang lưu…':'✓ Xác nhận hoàn tất & lưu chi phí'}}</button><button v-else-if="active(detail)" type="button" class="primary" :disabled="saving||!!blocked(detail)" @click="mode='complete'">Duyệt hoàn tất</button></footer></form></dialog><dialog ref="createDialog" class="modal" aria-labelledby="create-maintenance-title" @cancel.prevent="closeCreate" @click="outsideCreate"><form v-if="creation" @submit.prevent="createMaintenance"><header class="modal-heading"><div><span class="eyebrow">TẠO LỊCH MỚI</span><h3 id="create-maintenance-title">Bảo trì sân</h3></div><button type="button" :disabled="saving" aria-label="Đóng" @click="closeCreate">✕</button></header><div class="modal-body"><p v-if="courtsError" class="message error" role="alert">{{courtsError}} <button type="button" @click="loadCourts">Tải lại danh sách sân</button></p><label>Sân cần bảo trì<select v-model="creation.courtId" required :disabled="saving||courtsLoading||!!courtsError"><option value="">{{courtsLoading?'Đang tải sân…':'Chọn sân'}}</option><option v-for="court in courts" :key="court.id" :value="court.id">{{court.name}} · {{court.roomName||'Chưa có phòng'}}</option></select></label><label>Loại bảo trì<select v-model="creation.type" :disabled="saving"><option value="SCHEDULED">Bảo trì theo kế hoạch</option><option value="EMERGENCY">Sự cố đột xuất</option></select></label><label>Lý do / hư hỏng<textarea v-model="creation.reason" rows="3" required :disabled="saving" placeholder="Ví dụ: Thay lưới sân, sửa đèn chiếu sáng…"></textarea></label><label>Thời gian bắt đầu (giờ Việt Nam)<input v-model="creation.startTime" type="datetime-local" :required="creation.type==='SCHEDULED'" :disabled="saving"/></label><p v-if="creation.type==='EMERGENCY'" class="hint">Để trống thời gian bắt đầu để ghi nhận sự cố ngay.</p><label>Thời gian kết thúc dự kiến (giờ Việt Nam)<input v-model="creation.endTime" type="datetime-local" :required="creation.type==='SCHEDULED'" :disabled="saving"/></label><label>Chi phí dự kiến (VND)<input v-model="creation.maintenanceCost" type="number" min="0" step="1" required :disabled="saving"/></label><p class="callout" v-if="creation.type==='SCHEDULED'">Không thể tạo lịch trùng bảo trì hoặc booking hiện có. Chi phí thực tế sẽ được cập nhật khi duyệt hoàn tất.</p><p v-else class="message error">Ghi nhận sự cố sẽ hủy các booking chưa check-in bị ảnh hưởng trong khoảng thời gian này. Nếu để trống giờ kết thúc, các booking phía sau có thể bị ảnh hưởng cho đến khi hoàn tất bảo trì.</p><p v-if="formError" class="message error" role="alert">{{formError}}</p></div><footer class="modal-footer"><button type="button" :disabled="saving" @click="closeCreate">Đóng</button><button class="primary" :disabled="saving||courtsLoading||!!courtsError||!courts.length">{{saving?'Đang lưu…':creation.type==='EMERGENCY'?'Xác nhận ghi nhận sự cố':'+ Tạo bảo trì'}}</button></footer></form></dialog></div></template>
+<template>
+  <div class="maintenance-workspace">
+    <header class="hero">
+      <div>
+        <div class="hero-role">
+          <span class="eyebrow">CARROT · KHÔNG GIAN QUẢN TRỊ</span
+          ><span class="admin-pill">ADMIN</span>
+        </div>
+        <h2>Bảo trì &amp; sửa chữa sân</h2>
+        <p>
+          Theo dõi lịch do Admin hoặc nhân viên tạo, kiểm tra sửa chữa và duyệt hoàn tất.
+        </p>
+      </div>
+      <div class="actions">
+        <button :disabled="loading || saving" @click="load">↻ Làm mới</button
+        ><button class="primary" :disabled="loading || saving" @click="openCreate">
+          + Bảo trì
+        </button>
+      </div>
+    </header>
+    <div class="context-bar">
+      <div class="signed-user">
+        <span class="avatar admin-avatar">{{ initials(auth.user.fullName) }}</span>
+        <div>
+          <strong>{{ auth.user.fullName || auth.user.phone }}</strong
+          ><small>Đang đăng nhập · Quản trị viên</small>
+        </div>
+      </div>
+      <p>Nhân viên báo sự cố · Admin kiểm tra và duyệt hoàn tất</p>
+    </div>
+    <p v-if="error" class="message error" role="alert">{{ error }}</p>
+    <p v-if="success" class="message success" role="status">✓ {{ success }}</p>
+    <div class="metrics">
+      <article>
+        <small>CẦN XỬ LÝ / TOÀN BỘ</small
+        ><strong>{{ rows.filter(active).length }}</strong>
+      </article>
+      <article>
+        <small>ĐÃ HOÀN TẤT / TOÀN BỘ</small
+        ><strong>{{ rows.filter((r) => r.status === 'COMPLETED').length }}</strong>
+      </article>
+      <article>
+        <small>CHI PHÍ HOÀN TẤT / BỘ LỌC</small
+        ><strong>{{ money(completedCost) }}</strong>
+      </article>
+    </div>
+    <section class="panel">
+      <div class="heading">
+        <div>
+          <h3>Lịch bảo trì & lịch sử xử lý</h3>
+          <p>Chỉ duyệt hoàn tất sau khi sân đã được kiểm tra và sửa xong.</p>
+        </div>
+      </div>
+      <p v-if="initialRange" class="hint">
+        <label
+          ><input v-model="usePeriod" type="checkbox" /> Lọc theo kỳ Tổng quan (hoàn tất
+          theo ngày hoàn tất; lịch khác theo ngày bắt đầu). Bỏ chọn để xem mọi lịch cần xử
+          lý.</label
+        >
+      </p>
+      <div class="filters">
+        <select v-model="creatorRole" aria-label="Lọc vai trò người tạo">
+          <option value="">Admin &amp; nhân viên</option>
+          <option value="ADMIN">Do Admin tạo</option>
+          <option value="STAFF">Do nhân viên tạo</option>
+        </select>
+        <input
+          v-model="query"
+          placeholder="Tìm sân, mã lịch, lý do hoặc người tạo…"
+          aria-label="Tìm bảo trì"
+        /><select v-model="status" aria-label="Lọc trạng thái">
+          <option value="active">Cần xử lý</option>
+          <option value="">Tất cả lịch</option>
+          <option value="COMPLETED">Đã hoàn tất</option>
+          <option value="CANCELLED">Đã hủy</option>
+          <option value="SCHEDULED">Đã lên lịch</option>
+          <option value="IN_PROGRESS">Đang xử lý</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Sân / loại</th>
+              <th>Hư hỏng / lý do</th>
+              <th>Thời gian</th>
+              <th>Trạng thái</th>
+              <th>Chi phí</th>
+              <th>Người tạo lịch</th>
+              <th>Xử lý</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in shown" :key="r.id">
+              <td>
+                <strong>{{ r.court?.name }}</strong
+                ><small
+                  >{{
+                    r.type === 'EMERGENCY' ? 'Sự cố đột xuất' : 'Bảo trì theo kế hoạch'
+                  }}
+                  · #{{ r.id }}</small
+                >
+              </td>
+              <td class="reason">
+                <strong>{{ r.reason }}</strong
+                ><small v-if="r.repairDetail">Đã sửa: {{ r.repairDetail }}</small>
+              </td>
+              <td>
+                {{ date(r.startTime) }}<small>Dự kiến đến {{ date(r.endTime) }}</small>
+              </td>
+              <td>
+                <span class="badge" :class="r.status">{{
+                  labels[r.status] || r.status
+                }}</span
+                ><small v-if="r.completedAt">{{ date(r.completedAt) }}</small>
+              </td>
+              <td>
+                <strong>{{ money(r.maintenanceCost) }}</strong
+                ><small>{{
+                  r.status === 'COMPLETED'
+                    ? 'Chi phí thực tế'
+                    : 'Chi phí đã ghi khi tạo lịch'
+                }}</small>
+              </td>
+              <td>
+                <div class="creator-cell">
+                  <span
+                    class="avatar"
+                    :class="
+                      r.createdBy?.role === 'ADMIN' ? 'admin-avatar' : 'staff-avatar'
+                    "
+                    >{{ initials(r.createdBy?.fullName) }}</span
+                  >
+                  <div>
+                    <strong>{{ r.createdBy?.fullName || 'Chưa có thông tin' }}</strong
+                    ><small v-if="r.createdBy?.id">#{{ r.createdBy.id }}</small
+                    ><span class="role-tag" :class="r.createdBy?.role">{{
+                      creatorRoleLabel(r.createdBy?.role)
+                    }}</span>
+                  </div>
+                </div>
+              </td>
+              <td class="action-cell">
+                <div class="actions">
+                  <button
+                    class="primary"
+                    v-if="active(r)"
+                    :disabled="loading || saving || !!blocked(r)"
+                    @click="open(r, 'complete')"
+                  >
+                    ✓ Duyệt hoàn tất</button
+                  ><button :disabled="saving" @click="open(r)">Chi tiết</button
+                  ><button
+                    :disabled="loading || saving || !active(r)"
+                    @click="
+                      maintenanceActions.open(r.id, r.court.id, 'edit');
+                      loadCourts();
+                    "
+                  >
+                    Sửa</button
+                  ><button
+                    class="danger"
+                    :disabled="loading || saving || !active(r)"
+                    @click="maintenanceActions.open(r.id, r.court.id, 'cancel')"
+                  >
+                    Hủy lịch
+                  </button>
+                </div>
+                <small v-if="active(r)">{{ blocked(r) }}</small>
+              </td>
+            </tr>
+            <tr v-if="!shown.length">
+              <td colspan="7" class="empty">
+                {{ loading ? 'Đang tải…' : 'Không có lịch phù hợp.' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="pagination">
+        <span>{{ filtered.length }} lịch</span
+        ><button :disabled="page <= 1" @click="page--">←</button
+        ><span>{{ page }} / {{ pages }}</span
+        ><button :disabled="page >= pages" @click="page++">→</button>
+      </footer>
+    </section>
+    <MaintenanceActions
+      ref="maintenanceActions"
+      :auth="auth"
+      :courts="courts"
+      @changed="maintenanceChanged"
+      @session-expired="emit('session-expired')"
+    />
+    <dialog
+      ref="dialog"
+      class="modal"
+      aria-labelledby="maintenance-title"
+      @cancel.prevent="close"
+      @click="outside"
+    >
+      <form v-if="detail" @submit.prevent="complete">
+        <header class="modal-heading">
+          <div>
+            <span class="eyebrow">{{
+              mode === 'complete' ? 'XÁC NHẬN SỬA XONG' : 'THÔNG TIN BẢO TRÌ'
+            }}</span>
+            <h3 id="maintenance-title">{{ detail.court?.name }} · #{{ detail.id }}</h3>
+          </div>
+          <button type="button" :disabled="saving" aria-label="Đóng" @click="close">
+            ✕
+          </button>
+        </header>
+        <div class="modal-body">
+          <div class="detail-creator">
+            <span class="role-tag" :class="detail.createdBy?.role">{{
+              creatorRoleLabel(detail.createdBy?.role)
+            }}</span
+            ><strong>{{
+              detail.createdBy?.fullName || 'Chưa có thông tin người tạo'
+            }}</strong
+            ><small>Tạo lúc {{ date(detail.createdAt) }}</small>
+          </div>
+          <span class="badge" :class="detail.status">{{ labels[detail.status] }}</span>
+          <div class="damage">
+            <small>HƯ HỎNG / LÝ DO BAN ĐẦU</small>
+            <p>{{ detail.reason }}</p>
+          </div>
+          <p class="hint">
+            Bắt đầu: {{ date(detail.startTime) }}<br />Dự kiến kết thúc:
+            {{ date(detail.endTime) }}
+          </p>
+          <template v-if="mode === 'complete'"
+            ><label
+              >Chi phí thực tế (VND)<input
+                v-model="cost"
+                type="number"
+                min="0"
+                step="1"
+                required
+                placeholder="Nhập 0 nếu không phát sinh chi phí"
+                :disabled="saving" /></label
+            ><label
+              >Nội dung hư hỏng và công việc đã sửa<textarea
+                v-model="repair"
+                rows="5"
+                maxlength="5000"
+                required
+                placeholder="Ví dụ: Lưới bị rách; đã thay lưới mới, kiểm tra trụ và độ căng…"
+                :disabled="saving"
+              ></textarea>
+            </label>
+            <p class="callout">
+              Xác nhận sân đã sửa xong. Chi phí nhập ở đây là tổng chi phí thực tế, thay
+              cho số đã ghi trước đó, không cộng thêm lần nữa.
+            </p></template
+          ><template v-else
+            ><div class="total">
+              <span
+                >Chi phí {{ detail.status === 'COMPLETED' ? 'thực tế' : 'đã ghi' }}</span
+              ><strong>{{ money(detail.maintenanceCost) }}</strong>
+            </div>
+            <div class="repair-detail">
+              <small>NỘI DUNG ĐÃ SỬA</small>
+              <p>{{ detail.repairDetail || 'Chưa ghi nhận nội dung hoàn tất.' }}</p>
+            </div>
+            <p v-if="detail.completedAt" class="hint">
+              Hoàn tất lúc {{ date(detail.completedAt) }}
+            </p></template
+          >
+          <p v-if="formError" class="message error" role="alert">{{ formError }}</p>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" :disabled="saving" @click="close">Đóng</button
+          ><button
+            v-if="mode === 'complete'"
+            class="primary"
+            :disabled="saving || !!blocked(detail)"
+          >
+            {{ saving ? 'Đang lưu…' : '✓ Xác nhận hoàn tất & lưu chi phí' }}</button
+          ><button
+            v-else-if="active(detail)"
+            type="button"
+            class="primary"
+            :disabled="saving || !!blocked(detail)"
+            @click="mode = 'complete'"
+          >
+            Duyệt hoàn tất
+          </button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog
+      ref="createDialog"
+      class="modal"
+      aria-labelledby="create-maintenance-title"
+      @cancel.prevent="closeCreate"
+      @click="outsideCreate"
+    >
+      <form v-if="creation" @submit.prevent="createMaintenance">
+        <header class="modal-heading">
+          <div>
+            <span class="eyebrow">TẠO LỊCH MỚI</span>
+            <h3 id="create-maintenance-title">Bảo trì sân</h3>
+          </div>
+          <button type="button" :disabled="saving" aria-label="Đóng" @click="closeCreate">
+            ✕
+          </button>
+        </header>
+        <div class="modal-body">
+          <p v-if="courtsError" class="message error" role="alert">
+            {{ courtsError }}
+            <button type="button" @click="loadCourts">Tải lại danh sách sân</button>
+          </p>
+          <label
+            >Sân cần bảo trì<select
+              v-model="creation.courtId"
+              required
+              :disabled="saving || courtsLoading || !!courtsError"
+            >
+              <option value="">{{ courtsLoading ? 'Đang tải sân…' : 'Chọn sân' }}</option>
+              <option v-for="court in courts" :key="court.id" :value="court.id">
+                {{ court.name }} · {{ court.roomName || 'Chưa có phòng' }}
+              </option>
+            </select></label
+          ><label
+            >Loại bảo trì<select v-model="creation.type" :disabled="saving">
+              <option value="SCHEDULED">Bảo trì theo kế hoạch</option>
+              <option value="EMERGENCY">Sự cố đột xuất</option>
+            </select></label
+          ><label
+            >Lý do / hư hỏng<textarea
+              v-model="creation.reason"
+              rows="3"
+              required
+              :disabled="saving"
+              placeholder="Ví dụ: Thay lưới sân, sửa đèn chiếu sáng…"
+            ></textarea></label
+          ><label
+            >Thời gian bắt đầu (giờ Việt Nam)<input
+              v-model="creation.startTime"
+              type="datetime-local"
+              :required="creation.type === 'SCHEDULED'"
+              :disabled="saving"
+          /></label>
+          <p v-if="creation.type === 'EMERGENCY'" class="hint">
+            Để trống thời gian bắt đầu để ghi nhận sự cố ngay.
+          </p>
+          <label
+            >Thời gian kết thúc dự kiến (giờ Việt Nam)<input
+              v-model="creation.endTime"
+              type="datetime-local"
+              :required="creation.type === 'SCHEDULED'"
+              :disabled="saving" /></label
+          ><label
+            >Chi phí dự kiến (VND)<input
+              v-model="creation.maintenanceCost"
+              type="number"
+              min="0"
+              step="1"
+              required
+              :disabled="saving"
+          /></label>
+          <p class="callout" v-if="creation.type === 'SCHEDULED'">
+            Không thể tạo lịch trùng bảo trì hoặc booking hiện có. Chi phí thực tế sẽ được
+            cập nhật khi duyệt hoàn tất.
+          </p>
+          <p v-else class="message error">
+            Ghi nhận sự cố sẽ hủy các booking chưa check-in bị ảnh hưởng trong khoảng thời
+            gian này. Nếu để trống giờ kết thúc, các booking phía sau có thể bị ảnh hưởng
+            cho đến khi hoàn tất bảo trì.
+          </p>
+          <p v-if="formError" class="message error" role="alert">{{ formError }}</p>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" :disabled="saving" @click="closeCreate">Đóng</button
+          ><button
+            class="primary"
+            :disabled="saving || courtsLoading || !!courtsError || !courts.length"
+          >
+            {{
+              saving
+                ? 'Đang lưu…'
+                : creation.type === 'EMERGENCY'
+                  ? 'Xác nhận ghi nhận sự cố'
+                  : '+ Tạo bảo trì'
+            }}
+          </button>
+        </footer>
+      </form>
+    </dialog>
+  </div>
+</template>
 <style scoped>
-.maintenance-workspace{--green:#176c46;--ink:#254732;--muted:#849581;--line:#e0e9dc;color:var(--ink)}*{box-sizing:border-box}button,input,select,textarea{font:inherit}button{border:1px solid var(--line);border-radius:9px;background:white;padding:10px 14px;font-size:12px;color:var(--ink);cursor:pointer;font-weight:650}button:hover:not(:disabled){background:#eef5e9}button:disabled{opacity:.5;cursor:not-allowed}.primary{background:var(--green);border-color:var(--green);color:white}.primary:hover:not(:disabled){background:#105434}input,select,textarea{padding:12px;border:1px solid var(--line);border-radius:9px;color:var(--ink);background:white;min-width:0;font-size:13px}textarea{resize:vertical;width:100%}input:focus,textarea:focus,select:focus{outline:2px solid #9fc899;outline-offset:2px}h2,h3,p{margin:0}small{display:block;font-size:11px;color:var(--muted);line-height:1.6}.hero{display:flex;justify-content:space-between;align-items:center;gap:20px;background:linear-gradient(110deg,#194b35,#4d7a4a);padding:30px;border-radius:18px;color:white;margin-bottom:20px}.eyebrow{font-size:10px;letter-spacing:1.6px;color:#a3bd95;font-weight:750}.hero h2{font-size:30px;margin:10px 0;letter-spacing:-.7px}.hero p{font-size:12px;color:#d0dfc5}.hero button{color:white;background:#ffffff15;border-color:#ffffff30;white-space:nowrap}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}.metrics article{padding:20px;border:1px solid var(--line);background:white;border-radius:13px}.metrics small{font-size:9px;letter-spacing:.8px}.metrics strong{display:block;font-size:28px;letter-spacing:-.8px;margin-top:10px;color:var(--green)}.panel{padding:23px;background:white;border:1px solid var(--line);border-radius:16px}.heading h3{font-size:20px}.heading p{font-size:12px;color:var(--muted);margin-top:7px}.filters{display:flex;gap:12px;margin:22px 0}.filters input{flex:1}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left;white-space:nowrap;font-size:12px}th{padding:13px 12px;background:#f5f8f1;color:#83927b;font-size:10px}td{padding:17px 12px;border-bottom:1px solid #edf1e7}.reason{white-space:normal;min-width:200px;max-width:310px}.reason small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:5px}.badge{display:inline-block;font-size:10px;font-weight:700;padding:5px 8px;border-radius:6px;background:#eef1ea;color:#7e8975}.IN_PROGRESS{background:#fff0d9;color:#a68036}.SCHEDULED{background:#eaf0fc;color:#6588b8}.COMPLETED{background:#eaf5e5;color:#608d4b}.CANCELLED{background:#f4eae6;color:#ad8878}.actions{display:flex;gap:7px}.actions button{padding:8px 10px;font-size:11px}.empty{text-align:center;padding:40px;color:var(--muted)}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:20px;font-size:12px;color:var(--muted)}.pagination span:first-child{margin-right:auto}.pagination button{padding:5px 10px}.message{padding:13px 16px;border-radius:10px;font-size:13px;line-height:1.7;margin:12px 0}.error{background:#fff0e8;color:#ad6342}.success{background:#eaf5e5;color:#608d4b}.modal{border:0;padding:0;border-radius:18px;width:min(600px,calc(100vw - 32px));max-height:90vh;overflow:auto;color:var(--ink);box-shadow:0 25px 90px #17392345}.modal::backdrop{background:#193b2970;backdrop-filter:blur(4px)}.modal-heading{padding:20px 24px;background:white;position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);gap:15px}.modal-heading h3{margin-top:7px;font-size:21px}.modal-body{padding:24px}.damage{padding:16px;border-radius:11px;background:#fbf4e7;margin-top:17px}.damage p,.repair-detail p{font-size:13px;line-height:1.7;white-space:pre-wrap;margin-top:9px;overflow-wrap:anywhere}.hint{font-size:12px;line-height:1.8;color:var(--muted);margin:16px 0}label{display:grid;gap:8px;font-size:12px;font-weight:650;margin:20px 0}.callout{font-size:12px;line-height:1.7;color:#789366;padding:15px;background:#f3f7ed;border-radius:10px}.modal-footer{display:flex;gap:10px;justify-content:flex-end;padding:16px 24px;border-top:1px solid var(--line);background:white;position:sticky;bottom:0}.total{display:flex;justify-content:space-between;align-items:center;padding:18px;background:#f1f7eb;border-radius:11px;margin:18px 0;font-size:12px}.total strong{font-size:25px;color:var(--green)}.repair-detail{border:1px solid var(--line);border-radius:11px;padding:16px}@media(max-width:650px){.hero{padding:23px 18px;flex-direction:column;align-items:flex-start}.hero h2{font-size:26px}.metrics{grid-template-columns:1fr;gap:8px}.metrics article{padding:15px}.metrics strong{font-size:25px}.panel{padding:16px}.filters{flex-wrap:wrap}.filters input{flex-basis:100%}.filters select{width:100%}.modal-heading,.modal-body{padding:18px}.modal-footer{padding:13px 18px}.modal-footer button{font-size:11px}}
+.danger {
+  color: #a45136;
+  background: #fff0e9;
+  border-color: #e8c7bc;
+}
+.maintenance-workspace {
+  --green: #176c46;
+  --ink: #254732;
+  --muted: #849581;
+  --line: #e0e9dc;
+  color: var(--ink);
+}
+* {
+  box-sizing: border-box;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 650;
+}
+button:hover:not(:disabled) {
+  background: #eef5e9;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+.primary:hover:not(:disabled) {
+  background: #105434;
+}
+input,
+select,
+textarea {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: white;
+  min-width: 0;
+  font-size: 13px;
+}
+textarea {
+  resize: vertical;
+  width: 100%;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid #9fc899;
+  outline-offset: 2px;
+}
+h2,
+h3,
+p {
+  margin: 0;
+}
+small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(110deg, #194b35, #4d7a4a);
+  padding: 30px;
+  border-radius: 18px;
+  color: white;
+  margin-bottom: 20px;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  color: #a3bd95;
+  font-weight: 750;
+}
+.hero h2 {
+  font-size: 30px;
+  margin: 10px 0;
+  letter-spacing: -0.7px;
+}
+.hero p {
+  font-size: 12px;
+  color: #d0dfc5;
+}
+.hero button {
+  color: white;
+  background: #ffffff15;
+  border-color: #ffffff30;
+  white-space: nowrap;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.metrics article {
+  padding: 20px;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 13px;
+}
+.metrics small {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+}
+.metrics strong {
+  display: block;
+  font-size: 28px;
+  letter-spacing: -0.8px;
+  margin-top: 10px;
+  color: var(--green);
+}
+.panel {
+  padding: 23px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.heading h3 {
+  font-size: 20px;
+}
+.heading p {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.filters {
+  display: flex;
+  gap: 12px;
+  margin: 22px 0;
+}
+.filters input {
+  flex: 1;
+}
+.table-wrap {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 12px;
+}
+th {
+  padding: 13px 12px;
+  background: #f5f8f1;
+  color: #83927b;
+  font-size: 10px;
+}
+td {
+  padding: 17px 12px;
+  border-bottom: 1px solid #edf1e7;
+}
+.reason {
+  white-space: normal;
+  min-width: 200px;
+  max-width: 310px;
+}
+.reason small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 5px;
+}
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #eef1ea;
+  color: #7e8975;
+}
+.IN_PROGRESS {
+  background: #fff0d9;
+  color: #a68036;
+}
+.SCHEDULED {
+  background: #eaf0fc;
+  color: #6588b8;
+}
+.COMPLETED {
+  background: #eaf5e5;
+  color: #608d4b;
+}
+.CANCELLED {
+  background: #f4eae6;
+  color: #ad8878;
+}
+.actions {
+  display: flex;
+  gap: 7px;
+}
+.actions button {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+}
+.pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pagination span:first-child {
+  margin-right: auto;
+}
+.pagination button {
+  padding: 5px 10px;
+}
+.message {
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.error {
+  background: #fff0e8;
+  color: #ad6342;
+}
+.success {
+  background: #eaf5e5;
+  color: #608d4b;
+}
+.modal {
+  border: 0;
+  padding: 0;
+  border-radius: 18px;
+  width: min(600px, calc(100vw - 32px));
+  max-height: 90vh;
+  overflow: auto;
+  color: var(--ink);
+  box-shadow: 0 25px 90px #17392345;
+}
+.modal::backdrop {
+  background: #193b2970;
+  backdrop-filter: blur(4px);
+}
+.modal-heading {
+  padding: 20px 24px;
+  background: white;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  gap: 15px;
+}
+.modal-heading h3 {
+  margin-top: 7px;
+  font-size: 21px;
+}
+.modal-body {
+  padding: 24px;
+}
+.damage {
+  padding: 16px;
+  border-radius: 11px;
+  background: #fbf4e7;
+  margin-top: 17px;
+}
+.damage p,
+.repair-detail p {
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+}
+.hint {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted);
+  margin: 16px 0;
+}
+label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 650;
+  margin: 20px 0;
+}
+.callout {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #789366;
+  padding: 15px;
+  background: #f3f7ed;
+  border-radius: 10px;
+}
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+  background: white;
+  position: sticky;
+  bottom: 0;
+}
+.total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px;
+  background: #f1f7eb;
+  border-radius: 11px;
+  margin: 18px 0;
+  font-size: 12px;
+}
+.total strong {
+  font-size: 25px;
+  color: var(--green);
+}
+.repair-detail {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 16px;
+}
+@media (max-width: 650px) {
+  .hero {
+    padding: 23px 18px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hero h2 {
+    font-size: 26px;
+  }
+  .metrics {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .metrics article {
+    padding: 15px;
+  }
+  .metrics strong {
+    font-size: 25px;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .filters {
+    flex-wrap: wrap;
+  }
+  .filters input {
+    flex-basis: 100%;
+  }
+  .filters select {
+    width: 100%;
+  }
+  .modal-heading,
+  .modal-body {
+    padding: 18px;
+  }
+  .modal-footer {
+    padding: 13px 18px;
+  }
+  .modal-footer button {
+    font-size: 11px;
+  }
+}
+
+/* Visual hierarchy and creator roles */
+.maintenance-workspace {
+  --line: #e3e9e6;
+  --muted: #718079;
+  background: #f7f9f8;
+  border-radius: 18px;
+  padding: 20px;
+}
+.hero {
+  background: linear-gradient(120deg, #173d30, #245d46);
+  border-radius: 16px;
+  padding: 28px 30px;
+  margin-bottom: 0;
+  box-shadow: 0 8px 24px #153d3010;
+}
+.hero h2 {
+  font-size: 28px;
+  letter-spacing: -0.4px;
+}
+.hero p {
+  max-width: 570px;
+  line-height: 1.8;
+}
+.hero-role {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-pill {
+  border: 1px solid #ffffff40;
+  color: #fff;
+  background: #ffffff12;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1px;
+}
+.hero .primary {
+  background: #f3f8f0;
+  color: #1f513a;
+  border-color: #f3f8f0;
+}
+.context-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 18px 0 24px;
+}
+.context-bar > p {
+  font-size: 12px;
+  color: #718079;
+}
+.signed-user,
+.creator-cell {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.signed-user strong {
+  font-size: 13px;
+}
+.avatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 750;
+}
+.admin-avatar {
+  background: #eee8fb;
+  color: #7552ad;
+}
+.staff-avatar {
+  background: #e5f0fc;
+  color: #3572ad;
+}
+.role-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  margin-top: 4px;
+  color: #6a7770;
+  background: #f0f2f1;
+}
+.role-tag.ADMIN {
+  background: #eee8fb;
+  color: #7552ad;
+}
+.role-tag.STAFF {
+  background: #e5f0fc;
+  color: #3572ad;
+}
+.creator-cell strong {
+  font-size: 12px;
+}
+.detail-creator {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 13px;
+  margin-bottom: 18px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.detail-creator small {
+  width: 100%;
+}
+.metrics article {
+  box-shadow: 0 4px 15px #25473204;
+  border-radius: 12px;
+}
+.metrics article:nth-child(2) strong {
+  color: #4a70a2;
+}
+.metrics article:nth-child(3) strong {
+  color: #986c35;
+}
+.metrics small {
+  color: #667c6e;
+}
+.panel {
+  border-radius: 14px;
+}
+.heading h3 {
+  font-size: 18px;
+}
+.heading p {
+  line-height: 1.7;
+}
+.filters {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filters input {
+  min-width: 240px;
+}
+.filters select {
+  max-width: 100%;
+}
+th {
+  font-size: 11px;
+  color: #647b6b;
+  background: #f2f6f3;
+  padding: 14px 12px;
+}
+td {
+  vertical-align: middle;
+  padding: 16px 12px;
+}
+tbody tr:hover {
+  background: #fafcfb;
+}
+.action-cell .actions {
+  display: grid;
+  grid-template-columns: 110px 110px;
+  gap: 7px;
+}
+.action-cell .actions button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+.action-cell .actions button.primary {
+  grid-column: 1 / -1;
+}
+.badge {
+  padding: 6px 9px;
+}
+.reason {
+  max-width: 270px;
+}
+.modal-footer {
+  flex-wrap: wrap;
+}
+@media (max-width: 900px) {
+  .context-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .filters input {
+    flex-basis: 100%;
+  }
+  .filters select {
+    flex: 1;
+  }
+  .hero {
+    padding: 24px;
+  }
+}
+@media (max-width: 650px) {
+  .maintenance-workspace {
+    padding: 10px;
+  }
+  .hero h2 {
+    font-size: 23px;
+  }
+  .hero-role {
+    flex-wrap: wrap;
+  }
+  .hero {
+    padding: 22px 18px;
+  }
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+  .metrics article {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .metrics strong {
+    margin: 0;
+    font-size: 23px;
+  }
+  .context-bar > p {
+    line-height: 1.7;
+  }
+  .filters input {
+    min-width: 0;
+  }
+  .filters select {
+    width: 100%;
+    flex-basis: 100%;
+  }
+  .panel {
+    padding: 14px;
+  }
+  .hero .actions {
+    width: 100%;
+  }
+  .hero .actions button {
+    flex: 1;
+  }
+  .creator-cell {
+    min-width: 150px;
+  }
+}
 </style>

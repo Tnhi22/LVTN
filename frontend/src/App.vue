@@ -3,13 +3,64 @@ import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue'
 import LandingView from './views/LandingView.vue'
 import LoginView from './views/LoginView.vue'
 import AdminHomeView from './views/AdminHomeView.vue'
+import StaffHomeView from './views/StaffHomeView.vue'
+import CustomerHomeView from './views/CustomerHomeView.vue'
+import ProductView from './views/ProductView.vue'
+import PricingView from './views/PricingView.vue'
+import NewsView from './views/NewsView.vue'
+import ContactView from './views/ContactView.vue'
+import SearchView from './views/SearchView.vue'
+import BookingView from './views/BookingView.vue'
+import { publicRequest, todayVN } from './services/customerPortalUtils.js'
+import { getCustomerData } from './services/customerService.js'
 const AUTH_STORAGE_KEY = 'carrot.auth'
 const publicNavigation = [
-  { id: 'home', label: 'Trang chủ' },
-  { id: 'courts', label: 'Sân cầu' },
-  { id: 'booking', label: 'Đặt sân' },
+  { id: 'home', label: 'Home' },
+  { id: 'products', label: 'Sản phẩm' },
+  { id: 'booking', label: 'Lịch trống / Đặt sân' },
+  { id: 'pricing', label: 'Bảng giá' },
+  { id: 'news', label: 'Tin tức' },
   { id: 'contact', label: 'Liên hệ' },
 ]
+const routeParams = ref({})
+const globalQuery = ref('')
+const globalScope = ref('all')
+const globalDate = ref(todayVN())
+const notificationItems = ref([])
+const notificationLoading = ref(false)
+const notificationError = ref('')
+function submitGlobalSearch() {
+  const params = new URLSearchParams({
+    q: globalQuery.value.trim(),
+    scope: globalScope.value,
+    date: globalDate.value,
+  })
+  navigateTo(`search?${params}`)
+}
+async function loadNotifications() {
+  notificationItems.value = []
+  notificationError.value = ''
+  if (!isCustomer.value) return
+  notificationLoading.value = true
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  try {
+    const data = await getCustomerData(
+      '/api/bookings/my',
+      auth.value.accessToken,
+      controller.signal,
+    )
+    notificationItems.value = data
+      .filter((b) => ['PENDING', 'NO_SHOW_PENDING', 'CHECKED_IN'].includes(b.status))
+      .slice(0, 5)
+  } catch (e) {
+    if (e.status === 401) handleSessionExpired()
+    else notificationError.value = e.message
+  } finally {
+    window.clearTimeout(timeout)
+    notificationLoading.value = false
+  }
+}
 const activePage = ref('home')
 const menuOpen = ref(false)
 const notificationsOpen = ref(false)
@@ -17,10 +68,10 @@ const accountOpen = ref(false)
 const chatOpen = ref(false)
 const notice = ref('')
 const auth = ref(null)
+const isCustomer = computed(() => auth.value?.user?.role === 'CUSTOMER')
+const isStaff = computed(() => auth.value?.user?.role === 'STAFF')
 const isAdmin = computed(() => auth.value?.user?.role === 'ADMIN')
-const navigation = computed(() => isAdmin.value
-  ? [{ id: 'admin', label: 'Quản trị' }, { id: 'customer-preview', label: 'Xem trang khách hàng' }]
-  : publicNavigation)
+const navigation = computed(() => publicNavigation)
 
 const notificationArea = ref(null)
 const notificationButton = ref(null)
@@ -34,8 +85,7 @@ const messages = ref([
   {
     id: 1,
     role: 'assistant',
-    text:
-      'Chào bạn! Mình là trợ lý Carrot. Bạn có thể hỏi về ngày, giờ, sân, giá, thời gian chơi, trình độ và cầu lông.',
+    text: 'Chào bạn! Mình là trợ lý Carrot. Bạn có thể hỏi về ngày, giờ, sân, giá, thời gian chơi, trình độ và cầu lông.',
   },
 ])
 const suggestions = [
@@ -52,17 +102,10 @@ function getTokenExpiration(token) {
   try {
     const payload = token.split('.')[1]
     if (!payload) return null
-    const base64 = payload
-      .replace(/-/g, '+')
-      .replace(/_/g, '/')
-    const paddedBase64 = base64.padEnd(
-      Math.ceil(base64.length / 4) * 4,
-      '=',
-    )
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const paddedBase64 = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
     const decoded = JSON.parse(window.atob(paddedBase64))
-    return typeof decoded.exp === 'number'
-      ? decoded.exp * 1000
-      : null
+    return typeof decoded.exp === 'number' ? decoded.exp * 1000 : null
   } catch {
     return null
   }
@@ -104,12 +147,15 @@ function scheduleExpiration() {
     checkSession()
     return
   }
-  expirationTimer = window.setTimeout(() => {
-    checkSession()
-    if (auth.value) {
-      scheduleExpiration()
-    }
-  }, Math.min(remaining, 2147483647))
+  expirationTimer = window.setTimeout(
+    () => {
+      checkSession()
+      if (auth.value) {
+        scheduleExpiration()
+      }
+    },
+    Math.min(remaining, 2147483647),
+  )
 }
 function restoreAuth() {
   try {
@@ -142,27 +188,30 @@ function closeHeaderPanels() {
   accountOpen.value = false
 }
 function syncPage() {
-  const page = window.location.hash.slice(1)
+  const raw = window.location.hash.slice(1)
+  const [page, queryString] = raw.split('?')
+  routeParams.value = Object.fromEntries(new URLSearchParams(queryString || ''))
   // Cho liên kết hỗ trợ bàn phím giữ nguyên trang đang xem.
   if (page === 'page-content') return
   checkSession()
   const validPage =
-    page === 'login' ||
+    ['login', 'register', 'search'].includes(page) ||
     page === 'home' ||
+    ['courts', 'booking', 'my-bookings', 'history', 'profile', 'contact'].includes(
+      page,
+    ) ||
     (page === 'customer-preview' && isAdmin.value) ||
     (page === 'admin' && isAdmin.value) ||
+    (page === 'staff' && isStaff.value) ||
     navigation.value.some((item) => item.id === page)
   activePage.value = validPage ? page : 'home'
   if (page === 'admin' && !isAdmin.value) {
     activePage.value = auth.value ? 'home' : 'login'
-  } else if (isAdmin.value && activePage.value === 'home') {
-    activePage.value = 'admin'
+  } else if (page === 'staff' && !isStaff.value) {
+    activePage.value = auth.value ? 'home' : 'login'
   }
   closeHeaderPanels()
   notice.value = ''
-  if (!['home', 'login', 'admin', 'customer-preview'].includes(activePage.value)) {
-    notice.value = 'Trang này sẽ được bổ sung ở bước tiếp theo.'
-  }
   window.scrollTo({
     top: 0,
     behavior: 'auto',
@@ -188,7 +237,18 @@ async function handleSessionExpired() {
   await nextTick()
   notice.value = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
 }
-
+function handleProfileUpdated(profile) {
+  if (!isCustomer.value) return
+  auth.value = {
+    ...auth.value,
+    user: { ...auth.value.user, fullName: profile.fullName },
+  }
+  try {
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth.value))
+  } catch {
+    /* Hồ sơ vẫn được lưu ở máy chủ. */
+  }
+}
 function showLogin() {
   navigateTo('login')
 }
@@ -196,15 +256,18 @@ async function handleLoginSuccess(result) {
   auth.value = result
   let stored = true
   try {
-    window.sessionStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify(result),
-    )
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(result))
   } catch {
     stored = false
   }
   scheduleExpiration()
-  navigateTo(result.user.role === 'ADMIN' ? 'admin' : 'home')
+  navigateTo(
+    result.user.role === 'ADMIN'
+      ? 'admin'
+      : result.user.role === 'STAFF'
+        ? 'staff'
+        : 'home',
+  )
   // Đợi điều hướng xong để thông báo không bị syncPage xóa.
   await nextTick()
   const name = result.user.fullName || result.user.phone || 'bạn'
@@ -225,6 +288,7 @@ function toggleMenu() {
   menuOpen.value = !menuOpen.value
 }
 function toggleNotifications() {
+  if (!notificationsOpen.value) loadNotifications()
   menuOpen.value = false
   accountOpen.value = false
   notificationsOpen.value = !notificationsOpen.value
@@ -259,8 +323,7 @@ async function sendMessage(text = message.value) {
   messages.value.push({
     id: messages.value.length + 1,
     role: 'assistant',
-    text:
-      'Chat AI đang được hoàn thiện nên chưa thể tra cứu hoặc trả lời câu hỏi này.',
+    text: 'Chat AI đang được hoàn thiện nên chưa thể tra cứu hoặc trả lời câu hỏi này.',
   })
   await nextTick()
   if (chatBody.value) {
@@ -269,16 +332,10 @@ async function sendMessage(text = message.value) {
   chatInput.value?.focus()
 }
 function handleOutsideClick(event) {
-  if (
-    notificationsOpen.value &&
-    !notificationArea.value?.contains(event.target)
-  ) {
+  if (notificationsOpen.value && !notificationArea.value?.contains(event.target)) {
     notificationsOpen.value = false
   }
-  if (
-    accountOpen.value &&
-    !accountArea.value?.contains(event.target)
-  ) {
+  if (accountOpen.value && !accountArea.value?.contains(event.target)) {
     accountOpen.value = false
   }
 }
@@ -319,9 +376,7 @@ onUnmounted(() => {
 </script>
 <template>
   <div class="app-shell">
-    <a class="skip-link" href="#page-content">
-      Chuyển đến nội dung
-    </a>
+    <a class="skip-link" href="#page-content"> Chuyển đến nội dung </a>
     <header class="site-header">
       <div class="container header-inner">
         <a
@@ -330,10 +385,7 @@ onUnmounted(() => {
           aria-label="Carrot Badminton - Trang chủ"
           @click="closeHeaderPanels"
         >
-          <img
-            src="/images/logo.png"
-            alt="Carrot Badminton"
-          />
+          <img src="/images/logo.png" alt="Carrot Badminton" />
         </a>
         <span v-if="isAdmin" class="admin-label">QUẢN TRỊ</span>
         <nav
@@ -347,19 +399,14 @@ onUnmounted(() => {
             :key="item.id"
             :href="`#${item.id}`"
             :class="{ active: activePage === item.id }"
-            :aria-current="
-              activePage === item.id ? 'page' : undefined
-            "
+            :aria-current="activePage === item.id ? 'page' : undefined"
             @click="selectNavigation(item)"
           >
             {{ item.label }}
           </a>
         </nav>
         <div class="header-actions">
-          <div
-            ref="notificationArea"
-            class="notification-area"
-          >
+          <div ref="notificationArea" class="notification-area">
             <button
               ref="notificationButton"
               class="icon-button notification-button"
@@ -378,9 +425,7 @@ onUnmounted(() => {
                 stroke-linejoin="round"
                 aria-hidden="true"
               >
-                <path
-                  d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
-                />
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
                 <path d="M10 21h4" />
               </svg>
             </button>
@@ -405,29 +450,42 @@ onUnmounted(() => {
                 <span aria-hidden="true">○</span>
                 <strong>Thông báo của bạn</strong>
                 <template v-if="!auth">
-                  <p>
-                    Đăng nhập để theo dõi các cập nhật về lịch chơi.
-                  </p>
-                  <button
-                    class="small-button"
-                    type="button"
-                    @click="showLogin"
-                  >
+                  <p>Đăng nhập để theo dõi các cập nhật về lịch chơi.</p>
+                  <button class="small-button" type="button" @click="showLogin">
                     Đăng nhập
                   </button>
                 </template>
-                <p v-else>
-                  Tính năng nhận thông báo đang được kết nối.
-                </p>
+                <template v-else-if="isCustomer"
+                  ><p v-if="notificationLoading">Đang tải lịch chơi…</p>
+                  <p v-else-if="notificationError" role="alert">
+                    {{ notificationError }}
+                  </p>
+                  <div v-else-if="notificationItems.length" class="booking-notices">
+                    <button
+                      v-for="b in notificationItems"
+                      :key="b.id"
+                      @click="navigateTo('my-bookings')"
+                    >
+                      <strong>{{ b.court?.name }} · {{ b.bookingDate }}</strong
+                      ><span
+                        >{{ b.startTime?.slice(0, 5) }} – {{ b.endTime?.slice(0, 5) }} ·
+                        {{
+                          b.status === 'NO_SHOW_PENDING'
+                            ? 'Đang trễ giờ nhận sân'
+                            : b.status === 'CHECKED_IN'
+                              ? 'Đã nhận sân'
+                              : 'Chờ nhận sân'
+                        }}</span
+                      >
+                    </button>
+                  </div>
+                  <p v-else>Chưa có lịch chơi cần chú ý.</p></template
+                >
+                <p v-else>Xem cập nhật trong bảng điều hành của bạn.</p>
               </div>
             </section>
           </div>
-          <button
-            v-if="!auth"
-            class="login-button"
-            type="button"
-            @click="showLogin"
-          >
+          <button v-if="!auth" class="login-button" type="button" @click="showLogin">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -442,20 +500,22 @@ onUnmounted(() => {
             </svg>
             <span>Đăng nhập</span>
           </button>
-          <div
-            v-else
-            ref="accountArea"
-            class="account-area"
+          <button
+            v-if="!auth"
+            class="global-register"
+            type="button"
+            @click="navigateTo('register')"
           >
+            Đăng ký
+          </button>
+          <div v-if="auth" ref="accountArea" class="account-area">
             <button
               ref="accountButton"
               class="login-button account-button"
               type="button"
               :aria-expanded="accountOpen"
               aria-controls="account-panel"
-              :aria-label="`Tài khoản ${
-                auth.user.fullName || auth.user.phone || ''
-              }`"
+              :aria-label="`Tài khoản ${auth.user.fullName || auth.user.phone || ''}`"
               @click="toggleAccount"
             >
               <span class="account-avatar" aria-hidden="true">
@@ -469,9 +529,7 @@ onUnmounted(() => {
               <span class="account-name">
                 {{ auth.user.fullName || auth.user.phone }}
               </span>
-              <span class="account-arrow" aria-hidden="true">
-                ▾
-              </span>
+              <span class="account-arrow" aria-hidden="true"> ▾ </span>
             </button>
             <section
               v-if="accountOpen"
@@ -493,11 +551,20 @@ onUnmounted(() => {
                   {{ roleLabels[auth.user.role] }}
                 </small>
               </div>
-              <button
-                class="logout-button"
-                type="button"
-                @click="logout"
-              >
+              <div class="account-shortcuts">
+                <button v-if="isAdmin" @click="navigateTo('admin')">
+                  Trang quản trị ↗
+                </button>
+                <button v-if="isStaff" @click="navigateTo('staff')">
+                  Bảng điều hành staff ↗
+                </button>
+                <template v-if="isCustomer"
+                  ><button @click="navigateTo('my-bookings')">Lịch đặt của tôi</button
+                  ><button @click="navigateTo('history')">Lịch sử đặt sân</button
+                  ><button @click="navigateTo('profile')">Hồ sơ cá nhân</button></template
+                >
+              </div>
+              <button class="logout-button" type="button" @click="logout">
                 Đăng xuất
               </button>
             </section>
@@ -518,68 +585,99 @@ onUnmounted(() => {
               stroke-linecap="round"
               aria-hidden="true"
             >
-              <path
-                v-if="menuOpen"
-                d="M6 6l12 12M18 6L6 18"
-              />
-              <path
-                v-else
-                d="M4 6h16M4 12h16M4 18h16"
-              />
+              <path v-if="menuOpen" d="M6 6l12 12M18 6L6 18" />
+              <path v-else d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
         </div>
       </div>
+      <form class="global-search" role="search" @submit.prevent="submitGlobalSearch">
+        <div class="container global-search-inner">
+          <label class="search-scope"
+            ><span class="sr-only">Loại tìm kiếm</span
+            ><select v-model="globalScope">
+              <option value="all">Tất cả</option>
+              <option value="booking">Lịch trống</option>
+              <option value="products">Sản phẩm</option>
+              <option value="pricing">Bảng giá</option>
+            </select></label
+          ><label class="search-query"
+            ><span class="sr-only">Từ khóa</span
+            ><input
+              v-model="globalQuery"
+              placeholder="Tìm sân Premium, cầu lông, bảng giá…"
+              maxlength="150" /></label
+          ><label class="search-day"
+            ><span class="sr-only">Ngày cần tìm sân</span
+            ><input v-model="globalDate" type="date" :min="todayVN()" required /></label
+          ><button type="submit">Tìm kiếm ↗</button>
+        </div>
+      </form>
     </header>
-    <main
-      id="page-content"
-      class="page-content"
-      tabindex="-1"
-    >
-      <div
-        v-if="notice"
-        class="container notice"
-        role="status"
-      >
+    <main id="page-content" class="page-content" tabindex="-1">
+      <div v-if="notice" class="container notice" role="status">
         <span>{{ notice }}</span>
-        <button
-          type="button"
-          aria-label="Đóng thông báo"
-          @click="notice = ''"
-        >
-          ×
-        </button>
+        <button type="button" aria-label="Đóng thông báo" @click="notice = ''">×</button>
       </div>
       <AdminHomeView
         v-if="activePage === 'admin' && isAdmin"
         :auth="auth"
         @session-expired="handleSessionExpired"
       />
+      <StaffHomeView
+        v-else-if="activePage === 'staff' && isStaff"
+        :auth="auth"
+        @session-expired="handleSessionExpired"
+      />
+      <component
+        :is="['booking', 'courts'].includes(activePage) ? BookingView : CustomerHomeView"
+        v-else-if="
+          ['booking', 'courts', 'my-bookings', 'history', 'profile'].includes(activePage)
+        "
+        :auth="auth"
+        :page="activePage"
+        :group-filter="routeParams.type || ''"
+        :room-filter="routeParams.room || ''"
+        :initial-product="routeParams.product || ''"
+        :initial-date="routeParams.date || ''"
+        :initial-start="routeParams.start || ''"
+        :initial-end="routeParams.end || ''"
+        :initial-court="routeParams.court || ''"
+        @navigate="navigateTo"
+        @session-expired="handleSessionExpired"
+        @profile-updated="handleProfileUpdated"
+      />
+      <ProductView v-else-if="activePage === 'products'" @navigate="navigateTo" />
+      <PricingView v-else-if="activePage === 'pricing'" @navigate="navigateTo" />
+      <NewsView
+        v-else-if="activePage === 'news'"
+        :article-id="routeParams.article || ''"
+        @navigate="navigateTo"
+      />
+      <ContactView v-else-if="activePage === 'contact'" />
+      <SearchView
+        v-else-if="activePage === 'search'"
+        :query="routeParams.q || ''"
+        :scope="routeParams.scope || 'all'"
+        :search-date="routeParams.date || ''"
+        @navigate="navigateTo"
+      />
       <LandingView v-else-if="['home', 'customer-preview'].includes(activePage)" />
       <LoginView
-        v-else-if="activePage === 'login' && !auth"
+        v-else-if="['login', 'register'].includes(activePage) && !auth"
+        :initial-mode="activePage === 'register' ? 'register' : 'login'"
         @login-success="handleLoginSuccess"
       />
       <section
-        v-else-if="activePage === 'login' && auth"
+        v-else-if="['login', 'register'].includes(activePage) && auth"
         class="container signed-in-section"
       >
         <h1>Bạn đã đăng nhập</h1>
-        <p>
-          Chào {{ auth.user.fullName || auth.user.phone }}!
-        </p>
-        <button
-          class="small-button"
-          type="button"
-          @click="navigateTo('home')"
-        >
+        <p>Chào {{ auth.user.fullName || auth.user.phone }}!</p>
+        <button class="small-button" type="button" @click="navigateTo('home')">
           Về trang chủ
         </button>
       </section>
-      <!--
-        Các trang sân cầu, đặt sân và liên hệ
-        sẽ được thêm bằng component riêng ở bước sau.
-      -->
     </main>
     <footer class="site-footer">
       <div class="container footer-grid">
@@ -590,10 +688,7 @@ onUnmounted(() => {
             aria-label="Carrot Badminton - Trang chủ"
             @click="closeHeaderPanels"
           >
-            <img
-              src="/images/logo.png"
-              alt="Carrot Badminton"
-            />
+            <img src="/images/logo.png" alt="Carrot Badminton" />
           </a>
           <p>
             Một điểm hẹn.<br />
@@ -615,22 +710,14 @@ onUnmounted(() => {
         </div>
         <div class="footer-support">
           <h2>Đồng hành cùng bạn</h2>
-          <p>
-            Tìm hiểu sân, chọn lịch chơi và kết nối cộng đồng.
-          </p>
-          <button
-            class="footer-chat-link"
-            type="button"
-            @click="toggleChat"
-          >
+          <p>Tìm hiểu sân, chọn lịch chơi và kết nối cộng đồng.</p>
+          <button class="footer-chat-link" type="button" @click="toggleChat">
             Trò chuyện với Carrot AI →
           </button>
         </div>
       </div>
       <div class="container footer-bottom">
-        <p>
-          © {{ new Date().getFullYear() }} Carrot Badminton.
-        </p>
+        <p>© {{ new Date().getFullYear() }} Carrot Badminton.</p>
         <span>PLAY · CONNECT · GROW</span>
       </div>
     </footer>
@@ -642,9 +729,7 @@ onUnmounted(() => {
     >
       <header class="chat-header">
         <div class="chat-identity">
-          <span class="ai-avatar" aria-hidden="true">
-            AI
-          </span>
+          <span class="ai-avatar" aria-hidden="true"> AI </span>
           <div>
             <h2 id="chat-title">Carrot AI</h2>
             <p>Trợ lý tra cứu cầu lông</p>
@@ -666,9 +751,7 @@ onUnmounted(() => {
         aria-live="polite"
         aria-relevant="additions"
       >
-        <p class="chat-status">
-          Bản giao diện · Chưa kết nối AI
-        </p>
+        <p class="chat-status">Bản giao diện · Chưa kết nối AI</p>
         <div
           v-for="item in messages"
           :key="item.id"
@@ -680,10 +763,7 @@ onUnmounted(() => {
           </span>
           {{ item.text }}
         </div>
-        <div
-          v-if="messages.length === 1"
-          class="chat-suggestions"
-        >
+        <div v-if="messages.length === 1" class="chat-suggestions">
           <button
             v-for="suggestion in suggestions"
             :key="suggestion"
@@ -694,10 +774,7 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
-      <form
-        class="chat-form"
-        @submit.prevent="sendMessage()"
-      >
+      <form class="chat-form" @submit.prevent="sendMessage()">
         <input
           ref="chatInput"
           v-model="message"
@@ -706,11 +783,7 @@ onUnmounted(() => {
           aria-label="Tin nhắn cho Carrot AI"
           placeholder="Bạn muốn tìm sân lúc nào?"
         />
-        <button
-          type="submit"
-          aria-label="Gửi tin nhắn"
-          :disabled="!message.trim()"
-        >
+        <button type="submit" aria-label="Gửi tin nhắn" :disabled="!message.trim()">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -743,8 +816,19 @@ onUnmounted(() => {
   </div>
 </template>
 <style scoped>
-.admin-label { color: #fff; font-size: 10px; letter-spacing: 1px; border: 1px solid #ffffff50; padding: 4px 8px; border-radius: 6px; }
-@media(max-width: 480px) { .admin-label { display: none; } }
+.admin-label {
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 1px;
+  border: 1px solid #ffffff50;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+@media (max-width: 480px) {
+  .admin-label {
+    display: none;
+  }
+}
 .account-area {
   position: relative;
   min-width: 0;
@@ -829,7 +913,7 @@ onUnmounted(() => {
   font-weight: 700;
   cursor: pointer;
   transition:
-    background 160ms ease,
+    * background * 160ms ease,
     border-color 160ms ease;
 }
 .logout-button:hover {
@@ -873,6 +957,222 @@ onUnmounted(() => {
   }
   .account-panel {
     width: 240px;
+  }
+}
+
+.site-header {
+  top: 0;
+  position: sticky;
+  z-index: 100;
+  background: #005b35;
+  box-shadow: 0 4px 18px #122b1b15;
+}
+.header-inner {
+  max-width: 1440px;
+  min-height: 82px;
+  gap: 20px;
+}
+.main-navigation {
+  flex: 1;
+  justify-content: center;
+  gap: 20px;
+}
+.main-navigation a {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.global-register {
+  border: 1px solid #b7ceb666;
+  border-radius: 7px;
+  background: transparent;
+  color: white;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.global-search {
+  background: #fff;
+  border-bottom: 1px solid #dee6d7;
+  padding: 10px 0;
+}
+.global-search-inner {
+  max-width: 1440px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.global-search label {
+  display: block;
+}
+.global-search input,
+.global-search select {
+  min-height: 37px;
+  border: 1px solid #dee6d4;
+  border-radius: 4px;
+  background: #f6f9f1;
+  padding: 8px 12px;
+  color: #3c562f;
+  font: inherit;
+  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.search-query {
+  flex: 1;
+  min-width: 0;
+}
+.search-scope {
+  width: 140px;
+}
+.search-day {
+  width: 150px;
+}
+.global-search button {
+  min-height: 37px;
+  background: #ff8500;
+  color: #17351d;
+  border: 0;
+  border-radius: 4px;
+  padding: 9px 20px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.account-shortcuts {
+  display: grid;
+  border-top: 1px solid #e5eadf;
+  padding: 10px 0;
+}
+.account-shortcuts button {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 10px 15px;
+  color: #49663b;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.account-shortcuts button:hover {
+  background: #f0f5e9;
+}
+.booking-notices {
+  display: grid;
+  gap: 7px;
+}
+.booking-notices button {
+  text-align: left;
+  border: 1px solid #dfe8d6;
+  background: #f5f8ef;
+  padding: 12px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.booking-notices strong,
+.booking-notices span {
+  display: block;
+  font-size: 11px;
+  color: #637c50;
+}
+.booking-notices span {
+  font-size: 10px;
+  margin-top: 5px;
+}
+@media (max-width: 1200px) {
+  .main-navigation {
+    gap: 12px;
+  }
+  .main-navigation a {
+    font-size: 11px;
+  }
+  .header-inner {
+    gap: 12px;
+  }
+  .account-name {
+    max-width: 90px;
+  }
+}
+@media (max-width: 1050px) {
+  .menu-toggle {
+    display: flex;
+  }
+  .header-inner {
+    flex-wrap: wrap;
+  }
+  .main-navigation {
+    display: none;
+    flex-basis: 100%;
+    order: 3;
+  }
+  .main-navigation.open {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    padding: 10px 0;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+  .main-navigation a {
+    text-align: center;
+    padding: 10px;
+  }
+  .account-name {
+    display: none;
+  }
+}
+@media (max-width: 650px) {
+  .global-search-inner {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .search-query {
+    order: 1;
+    flex-basis: 70%;
+  }
+  .global-search button {
+    order: 2;
+    padding: 9px 13px;
+  }
+  .search-scope {
+    order: 3;
+    flex: 1;
+  }
+  .search-day {
+    order: 4;
+    flex: 1;
+  }
+  .global-register {
+    padding: 9px;
+    font-size: 11px;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+  .main-navigation.open {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .header-inner {
+    min-height: 70px;
+  }
+  .global-search input,
+  .global-search select {
+    min-height: 33px;
+    font-size: 11px;
+  }
+  .global-search {
+    padding: 7px 0;
   }
 }
 </style>
