@@ -31,8 +31,13 @@ public class CustomerDailyBookingController {
     LocalTime endTime,
     String status,
     String sessionStatus,
+    String sessionCancelReason,
+    Integer minParticipants,
     Long totalAmount,
-    boolean daily
+    boolean daily,
+    Long registeredSlots,
+    Long checkedInSlots,
+    Integer maxParticipants
   ) {}
 
   @GetMapping
@@ -60,10 +65,27 @@ public class CustomerDailyBookingController {
           s.getSessionDate(),
           s.getStartTime(),
           s.getEndTime(),
-          p.getStatus(),
+          "CANCELLED".equals(s.getStatus()) ? "CANCELLED" : p.getStatus(),
           s.getStatus(),
+          s.getCancelReason(),
+          s.getMinParticipants(),
           p.getAmountDue(),
-          true
+          true,
+          em
+            .createQuery(
+              "select coalesce(sum(p.slotCount), 0) from DailyVisitorParticipant p where p.session.id = :sessionId and p.status <> 'CANCELLED'",
+              Long.class
+            )
+            .setParameter("sessionId", s.getId())
+            .getSingleResult(),
+          em
+            .createQuery(
+              "select coalesce(sum(p.checkedInSlots), 0) from DailyVisitorParticipant p where p.session.id = :sessionId and p.status <> 'CANCELLED'",
+              Long.class
+            )
+            .setParameter("sessionId", s.getId())
+            .getSingleResult(),
+          s.getMaxParticipants()
         );
       })
       .toList();

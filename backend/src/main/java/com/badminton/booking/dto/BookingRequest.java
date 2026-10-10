@@ -123,4 +123,14 @@ public class BookingRequest {
   public void setQuantityTubes(Integer quantityTubes) {
     this.quantityTubes = quantityTubes;
   }
+
+  private String verificationToken;
+
+  public String getVerificationToken() {
+    return verificationToken;
+  }
+
+  public void setVerificationToken(String value) {
+    verificationToken = value;
+  }
 }

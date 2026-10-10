@@ -200,8 +200,11 @@ public class AuthService {
                 user.getFullName(),
                 user.getEmail(),
                 user.getPhone(),
-                user.getRole()
-        );
+                user.getRole(),
+                Boolean.TRUE.equals(user.getEmailVerified()),
+                Boolean.TRUE.equals(user.getPhoneVerified())
+                );
+
     }
         // =====================================================
         // KIỂM TRA MẬT KHẨU
@@ -390,7 +393,9 @@ public class AuthService {
                 user.getFullName(),
                 user.getEmail(),
                 user.getPhone(),
-                user.getRole()
+                user.getRole(),
+                Boolean.TRUE.equals(user.getEmailVerified()),
+                Boolean.TRUE.equals(user.getPhoneVerified())
         );
         }
 
@@ -408,7 +413,7 @@ public class AuthService {
                 );
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForVerification(userId)
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
@@ -668,7 +673,7 @@ public class AuthService {
                 );
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForVerification(userId)
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
@@ -712,9 +717,7 @@ public class AuthService {
 
         PhoneVerificationOtp previousOtp =
                 phoneVerificationOtpRepository
-                        .findTopByUser_IdAndUsedFalseOrderByCreatedAtDesc(
-                                userId
-                        )
+                        .findTopByUser_IdOrderByCreatedAtDescIdDesc(userId)
                         .orElse(null);
 
         if (previousOtp != null
@@ -767,7 +770,7 @@ public class AuthService {
 
 
 
-        @Transactional
+        @Transactional(noRollbackFor = BusinessException.class)
         public void verifyPhone(
                 Long userId,
                 VerifyPhoneRequest request) {
@@ -779,7 +782,7 @@ public class AuthService {
                 );
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForVerification(userId)
                 .orElseThrow(() ->
                         new BusinessException(
                                 HttpStatus.NOT_FOUND,
@@ -796,9 +799,7 @@ public class AuthService {
 
         PhoneVerificationOtp verificationOtp =
                 phoneVerificationOtpRepository
-                        .findTopByUser_IdAndUsedFalseOrderByCreatedAtDesc(
-                                userId
-                        )
+                        .findTopByUser_IdAndUsedFalseOrderByCreatedAtDescIdDesc(userId)
                         .orElseThrow(() ->
                                 new BusinessException(
                                         HttpStatus.BAD_REQUEST,

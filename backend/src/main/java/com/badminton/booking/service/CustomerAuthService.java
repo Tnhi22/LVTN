@@ -82,8 +82,17 @@ public class CustomerAuthService {
         if (!List.of("ACTIVE", "WARNING").contains(user.getStatus() == null ? "" : user.getStatus())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "Tài khoản hiện không hoạt động.");
         }
-        return new AuthResponse(jwt.generateToken(user), "Bearer", user.getId(),
-                user.getFullName(), user.getEmail(), user.getPhone(), user.getRole());
+    return new AuthResponse(
+            jwt.generateToken(user),
+            "Bearer",
+            user.getId(),
+            user.getFullName(),
+            user.getEmail(),
+            user.getPhone(),
+            user.getRole(),
+            Boolean.TRUE.equals(user.getEmailVerified()),
+            Boolean.TRUE.equals(user.getPhoneVerified())
+);
     }
 
     @Transactional

@@ -154,7 +154,8 @@ public class DailyVisitorParticipantService {
 
     participant.setStatus("CONFIRMED");
 
-    DailyVisitorParticipant savedParticipant = participantRepository.saveAndFlush(participant);
+    DailyVisitorParticipant savedParticipant =
+      participantRepository.saveAndFlush(participant);
 
     // Cập nhật OPEN/FULL theo đăng ký và slot giữ tạm.
 
@@ -196,11 +197,11 @@ public class DailyVisitorParticipantService {
       );
     }
 
-    if (slotCount == null || slotCount <= 0) {
+    if (slotCount == null || slotCount < 1 || slotCount > 2) {
       throw new BusinessException(
         HttpStatus.BAD_REQUEST,
 
-        "Số slot đăng ký phải lớn hơn 0"
+        "Mỗi lần đăng ký Daily Visitor tại quầy chỉ được từ 1 đến 2 người"
       );
     }
 
@@ -272,7 +273,8 @@ public class DailyVisitorParticipantService {
 
     participant.setStatus("CONFIRMED");
 
-    DailyVisitorParticipant savedParticipant = participantRepository.saveAndFlush(participant);
+    DailyVisitorParticipant savedParticipant =
+      participantRepository.saveAndFlush(participant);
 
     waitlistService.processSession(sessionId);
 
@@ -291,7 +293,9 @@ public class DailyVisitorParticipantService {
 
     // Khóa session và đọc lại participant trước khi xử lý.
 
-    DailyVisitorParticipant participant = findParticipantForUpdate(participantId);
+    DailyVisitorParticipant participant = findParticipantForUpdate(
+      participantId
+    );
 
     DailyVisitorSession session = participant.getSession();
 
@@ -351,9 +355,12 @@ public class DailyVisitorParticipantService {
 
     participant.setCheckedInBy(staff.getId());
 
-    DailyVisitorParticipant savedParticipant = participantRepository.saveAndFlush(participant);
+    DailyVisitorParticipant savedParticipant =
+      participantRepository.saveAndFlush(participant);
 
-    Long checkedInSlots = participantRepository.getCheckedInSlots(session.getId());
+    Long checkedInSlots = participantRepository.getCheckedInSlots(
+      session.getId()
+    );
 
     long actualCheckedInSlots = checkedInSlots == null ? 0L : checkedInSlots;
 
@@ -386,7 +393,10 @@ public class DailyVisitorParticipantService {
   // =========================================================
 
   @Transactional
-  public DailyVisitorParticipant cancelByCustomer(Long participantId, Long userId) {
+  public DailyVisitorParticipant cancelByCustomer(
+    Long participantId,
+    Long userId
+  ) {
     if (userId == null) {
       throw new BusinessException(
         HttpStatus.UNAUTHORIZED,
@@ -395,7 +405,9 @@ public class DailyVisitorParticipantService {
       );
     }
 
-    DailyVisitorParticipant participant = findParticipantForUpdate(participantId);
+    DailyVisitorParticipant participant = findParticipantForUpdate(
+      participantId
+    );
 
     if (participant.getUser() == null) {
       throw new BusinessException(
@@ -431,10 +443,15 @@ public class DailyVisitorParticipantService {
   // =========================================================
 
   @Transactional
-  public DailyVisitorParticipant cancelWalkInByStaff(Long participantId, Long staffId) {
+  public DailyVisitorParticipant cancelWalkInByStaff(
+    Long participantId,
+    Long staffId
+  ) {
     requireStaff(staffId);
 
-    DailyVisitorParticipant participant = findParticipantForUpdate(participantId);
+    DailyVisitorParticipant participant = findParticipantForUpdate(
+      participantId
+    );
 
     if (participant.getUser() != null) {
       throw new BusinessException(
@@ -501,8 +518,12 @@ public class DailyVisitorParticipantService {
     if (
       !Boolean.TRUE.equals(session.getSchedule().getActive()) ||
       !Boolean.TRUE.equals(session.getSchedule().getCourt().getActive()) ||
-      !Boolean.TRUE.equals(session.getSchedule().getCourt().getRoom().getActive()) ||
-      !Boolean.TRUE.equals(session.getSchedule().getCourt().getRoom().getCourtType().getActive())
+      !Boolean.TRUE.equals(
+        session.getSchedule().getCourt().getRoom().getActive()
+      ) ||
+      !Boolean.TRUE.equals(
+        session.getSchedule().getCourt().getRoom().getCourtType().getActive()
+      )
     ) {
       throw new BusinessException(
         HttpStatus.CONFLICT,
@@ -593,7 +614,9 @@ public class DailyVisitorParticipantService {
     return participant;
   }
 
-  private DailyVisitorParticipant cancelParticipant(DailyVisitorParticipant participant) {
+  private DailyVisitorParticipant cancelParticipant(
+    DailyVisitorParticipant participant
+  ) {
     validateParticipantCanBeCancelled(participant);
 
     DailyVisitorSession session = participant.getSession();
@@ -604,7 +627,8 @@ public class DailyVisitorParticipantService {
 
     participant.setStatus("CANCELLED");
 
-    DailyVisitorParticipant savedParticipant = participantRepository.saveAndFlush(participant);
+    DailyVisitorParticipant savedParticipant =
+      participantRepository.saveAndFlush(participant);
 
     // Slot vừa trống được ưu tiên cho người đầu hàng.
 
@@ -613,7 +637,9 @@ public class DailyVisitorParticipantService {
     return savedParticipant;
   }
 
-  private void validateParticipantCanBeCancelled(DailyVisitorParticipant participant) {
+  private void validateParticipantCanBeCancelled(
+    DailyVisitorParticipant participant
+  ) {
     if ("CONFIRMED".equals(participant.getStatus())) {
       return;
     }
@@ -646,7 +672,10 @@ public class DailyVisitorParticipantService {
       );
     }
 
-    if ("CANCELLED".equals(session.getStatus()) || "CLOSED".equals(session.getStatus())) {
+    if (
+      "CANCELLED".equals(session.getStatus()) ||
+      "CLOSED".equals(session.getStatus())
+    ) {
       throw new BusinessException(
         HttpStatus.CONFLICT,
 

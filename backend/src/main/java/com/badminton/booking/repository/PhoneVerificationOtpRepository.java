@@ -9,7 +9,12 @@ public interface PhoneVerificationOtpRepository
         extends JpaRepository<PhoneVerificationOtp, Long> {
 
     Optional<PhoneVerificationOtp>
-    findTopByUser_IdAndUsedFalseOrderByCreatedAtDesc(
-            Long userId
-    );
+    findTopByUser_IdOrderByCreatedAtDescIdDesc(Long userId);
+
+    Optional<PhoneVerificationOtp>
+    findTopByUser_IdAndUsedFalseOrderByCreatedAtDescIdDesc(Long userId);
+
+    // Giữ tương thích với những chỗ còn gọi phương thức cũ.
+    Optional<PhoneVerificationOtp>
+    findTopByUser_IdAndUsedFalseOrderByCreatedAtDesc(Long userId);
 }

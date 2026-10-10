@@ -7,6 +7,8 @@ public record AuthResponse(
         String fullName,
         String email,
         String phone,
-        String role
+        String role,
+        boolean emailVerified,
+        boolean phoneVerified
 ) {
 }

@@ -74,6 +74,7 @@ public class BookingController {
   private final CourtMaintenanceRepository courtMaintenanceRepository;
   private final BookingSettlementService settlementService;
   private final BookingBillService bookingBillService;
+  private final com.badminton.booking.service.CounterBookingVerificationService counterVerification;
 
   public BookingController(
     com.badminton.booking.service.CustomerBookingPolicy customerBookingPolicy,
@@ -86,7 +87,8 @@ public class BookingController {
     CourtPriceRepository courtPriceRepository,
     BookingInventoryService bookingInventoryService,
     BookingSettlementService settlementService,
-    BookingBillService bookingBillService
+    BookingBillService bookingBillService,
+    com.badminton.booking.service.CounterBookingVerificationService counterVerification
   ) {
     this.customerBookingPolicy = customerBookingPolicy;
     this.bookingRepository = bookingRepository;
@@ -99,6 +101,7 @@ public class BookingController {
     this.bookingInventoryService = bookingInventoryService;
     this.settlementService = settlementService;
     this.bookingBillService = bookingBillService;
+    this.counterVerification = counterVerification;
   }
 
   // CUSTOMER tự đặt sân. userId luôn được lấy từ JWT.
@@ -121,11 +124,17 @@ public class BookingController {
     @RequestBody BookingRequest request,
     @AuthenticationPrincipal Jwt jwt
   ) {
+    if (jwt == null) throw new BusinessException(
+      HttpStatus.UNAUTHORIZED,
+      "Cần đăng nhập"
+    );
     Long staffId = Long.valueOf(jwt.getSubject());
 
     User staff = userRepository
       .findById(staffId)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên")
+      );
 
     if (!"STAFF".equals(staff.getRole()) && !"ADMIN".equals(staff.getRole())) {
       throw new BusinessException(
@@ -134,12 +143,30 @@ public class BookingController {
       );
     }
 
+    if (request == null) throw new BusinessException(
+      HttpStatus.BAD_REQUEST,
+      "Thiếu dữ liệu booking"
+    );
+    request.setWalkInPhone(
+      counterVerification.normalize(request.getWalkInPhone())
+    );
+    counterVerification.consume(
+      request.getWalkInPhone(),
+      request.getVerificationToken(),
+      staffId
+    );
     return createBookingInternal(request, staff);
   }
 
-  private List<NormalBooking> createBookingInternal(BookingRequest request, User staff) {
+  private List<NormalBooking> createBookingInternal(
+    BookingRequest request,
+    User staff
+  ) {
     if (request == null) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Dữ liệu đặt sân không được để trống");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Dữ liệu đặt sân không được để trống"
+      );
     }
 
     User user = null;
@@ -156,7 +183,10 @@ public class BookingController {
       user = userRepository
         .findById(request.getUserId())
         .orElseThrow(() ->
-          new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng")
+          new BusinessException(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy người dùng"
+          )
         );
 
       // Phải xác minh số điện thoại trước khi đặt sân
@@ -176,10 +206,8 @@ public class BookingController {
       }
 
       if ("WARNING".equals(user.getStatus())) {
-        List<UserViolation> warningHistories = violationRepository.findWarningHistory(
-          user.getId(),
-          "WARNING"
-        );
+        List<UserViolation> warningHistories =
+          violationRepository.findWarningHistory(user.getId(), "WARNING");
 
         if (warningHistories.isEmpty()) {
           throw new BusinessException(
@@ -190,7 +218,9 @@ public class BookingController {
 
         UserViolation warningViolation = warningHistories.get(0);
 
-        LocalDateTime warningUntil = warningViolation.getCreatedAt().plusDays(2);
+        LocalDateTime warningUntil = warningViolation
+          .getCreatedAt()
+          .plusDays(2);
 
         if (LocalDateTime.now().isBefore(warningUntil)) {
           throw new BusinessException(
@@ -243,7 +273,10 @@ public class BookingController {
     } else if (request.getCourtId() != null) {
       courtIds.add(request.getCourtId());
     } else {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Vui lòng chọn ít nhất một sân");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Vui lòng chọn ít nhất một sân"
+      );
     }
 
     if (
@@ -258,8 +291,10 @@ public class BookingController {
     }
 
     if (
-      (request.getStartTime().getMinute() != 0 && request.getStartTime().getMinute() != 30) ||
-      (request.getEndTime().getMinute() != 0 && request.getEndTime().getMinute() != 30) ||
+      (request.getStartTime().getMinute() != 0 &&
+        request.getStartTime().getMinute() != 30) ||
+      (request.getEndTime().getMinute() != 0 &&
+        request.getEndTime().getMinute() != 30) ||
       request.getStartTime().getSecond() != 0 ||
       request.getEndTime().getSecond() != 0 ||
       request.getStartTime().getNano() != 0 ||
@@ -274,26 +309,46 @@ public class BookingController {
     LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
     if (
       request.getBookingDate().isBefore(today) ||
-      request.getBookingDate().isAfter(customerBookingPolicy.lastBookingDate(today))
+      request
+        .getBookingDate()
+        .isAfter(customerBookingPolicy.lastBookingDate(today))
     ) {
       throw new BusinessException(
         HttpStatus.BAD_REQUEST,
-        "Chỉ được đặt từ hôm nay đến " + customerBookingPolicy.lastBookingDate(today)
+        "Chỉ được đặt từ hôm nay đến " +
+          customerBookingPolicy.lastBookingDate(today)
       );
     }
 
-    LocalDateTime bookingNow = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-    LocalDateTime bookingStart = LocalDateTime.of(request.getBookingDate(), request.getStartTime());
-    LocalDateTime bookingEnd = LocalDateTime.of(request.getBookingDate(), request.getEndTime());
+    LocalDateTime bookingNow = LocalDateTime.now(
+      java.time.ZoneId.of("Asia/Ho_Chi_Minh")
+    );
+    LocalDateTime bookingStart = LocalDateTime.of(
+      request.getBookingDate(),
+      request.getStartTime()
+    );
+    LocalDateTime bookingEnd = LocalDateTime.of(
+      request.getBookingDate(),
+      request.getEndTime()
+    );
 
     if (!bookingEnd.isAfter(bookingStart)) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Giờ kết thúc phải sau giờ bắt đầu");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Giờ kết thúc phải sau giờ bắt đầu"
+      );
     }
 
-    long minutes = Duration.between(request.getStartTime(), request.getEndTime()).toMinutes();
+    long minutes = Duration.between(
+      request.getStartTime(),
+      request.getEndTime()
+    ).toMinutes();
 
     if (minutes < 60) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Thời gian đặt sân tối thiểu là 1 giờ");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Thời gian đặt sân tối thiểu là 1 giờ"
+      );
     }
 
     if (minutes % 30 != 0) {
@@ -309,11 +364,17 @@ public class BookingController {
 
     if (staff == null) {
       if (!bookingStart.isAfter(bookingNow)) {
-        throw new BusinessException(HttpStatus.BAD_REQUEST, "Không được đặt sân vào giờ đã qua");
+        throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "Không được đặt sân vào giờ đã qua"
+        );
       }
     } else if (!bookingStart.isAfter(bookingNow)) {
       if (!bookingNow.isBefore(bookingEnd)) {
-        throw new BusinessException(HttpStatus.BAD_REQUEST, "Khung giờ này đã kết thúc");
+        throw new BusinessException(
+          HttpStatus.BAD_REQUEST,
+          "Khung giờ này đã kết thúc"
+        );
       }
 
       if (!bookingNow.isBefore(bookingStart.plusMinutes(30))) {
@@ -330,12 +391,18 @@ public class BookingController {
 
     // Kiểm tra ID sân.
     if (courtIds.stream().anyMatch(id -> id == null || id <= 0)) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "ID sân không hợp lệ");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "ID sân không hợp lệ"
+      );
     }
 
     // Không cho chọn cùng một sân nhiều lần.
     if (new java.util.HashSet<>(courtIds).size() != courtIds.size()) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Không được chọn trùng sân");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Không được chọn trùng sân"
+      );
     }
 
     // Các yêu cầu đặt nhiều sân đều khóa theo cùng thứ tự.
@@ -347,7 +414,10 @@ public class BookingController {
       Court court = courtRepository
         .findByIdForBooking(courtId)
         .orElseThrow(() ->
-          new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy sân ID: " + courtId)
+          new BusinessException(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy sân ID: " + courtId
+          )
         );
 
       if (!Boolean.TRUE.equals(court.getActive())) {
@@ -359,20 +429,26 @@ public class BookingController {
 
       // Giữ nguyên phần kiểm tra bảo trì và trùng lịch phía dưới.
 
-      boolean maintenanceOverlap = courtMaintenanceRepository.existsActiveMaintenanceOverlap(
-        courtId,
-        bookingStart,
-        bookingEnd
-      );
+      boolean maintenanceOverlap =
+        courtMaintenanceRepository.existsActiveMaintenanceOverlap(
+          courtId,
+          bookingStart,
+          bookingEnd
+        );
 
       if (maintenanceOverlap) {
         throw new BusinessException(
           HttpStatus.CONFLICT,
-          "Sân " + court.getName() + " đang bảo trì hoặc gặp sự cố trong khung giờ này"
+          "Sân " +
+            court.getName() +
+            " đang bảo trì hoặc gặp sự cố trong khung giờ này"
         );
       }
 
-      var dailySessions = dailyVisitorSessions(courtId, request.getBookingDate());
+      var dailySessions = dailyVisitorSessions(
+        courtId,
+        request.getBookingDate()
+      );
       if (
         dailySessions
           .stream()
@@ -428,8 +504,10 @@ public class BookingController {
     // KIỂM TRA VÀ GIỮ ỐNG CẦU CHO BOOKING
     // =================================================
 
-    int requestedTubes = request.getQuantityTubes() == null ? 0 : request.getQuantityTubes();
-    int requestedPieces = request.getQuantityPieces() == null ? 0 : request.getQuantityPieces();
+    int requestedTubes =
+      request.getQuantityTubes() == null ? 0 : request.getQuantityTubes();
+    int requestedPieces =
+      request.getQuantityPieces() == null ? 0 : request.getQuantityPieces();
     if (
       requestedTubes < 0 ||
       requestedPieces < 0 ||
@@ -442,19 +520,30 @@ public class BookingController {
         "Chọn mua theo ống hoặc theo quả, số lượng hợp lệ"
       );
     }
-    boolean hasShuttles = requestedTubes > 0 || requestedPieces > 0;
-    if (hasShuttles != (request.getProductId() != null)) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Sản phẩm và số lượng cầu không hợp lệ");
-    }
-    if (hasShuttles && (staff != null || selectedCourts.size() != 1)) {
+    if (staff != null && requestedPieces > 0) {
       throw new BusinessException(
         HttpStatus.BAD_REQUEST,
-        "Mua cầu online chỉ đi kèm một sân; khách tại quầy mua qua nghiệp vụ bán tại quầy"
+        "Tại quầy chỉ bán cầu theo ống trong booking"
+      );
+    }
+    boolean hasShuttles = requestedTubes > 0 || requestedPieces > 0;
+    if (hasShuttles != (request.getProductId() != null)) {
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Sản phẩm và số lượng cầu không hợp lệ"
+      );
+    }
+    if (hasShuttles && selectedCourts.size() != 1) {
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Booking mua kèm cầu chỉ được chọn một sân"
       );
     }
     if (
       requestedPieces > 0 &&
-      !customerBookingPolicy.allowsPieces(selectedCourts.get(0).getRoom().getCourtType().getName())
+      !customerBookingPolicy.allowsPieces(
+        selectedCourts.get(0).getRoom().getCourtType().getName()
+      )
     ) {
       throw new BusinessException(
         HttpStatus.BAD_REQUEST,
@@ -466,10 +555,18 @@ public class BookingController {
     if (hasShuttles) {
       reservedProduct =
         requestedPieces > 0
-          ? bookingInventoryService.reservePieces(request.getProductId(), requestedPieces)
-          : bookingInventoryService.reserveProduct(request.getProductId(), requestedTubes);
+          ? bookingInventoryService.reservePieces(
+              request.getProductId(),
+              requestedPieces
+            )
+          : bookingInventoryService.reserveProduct(
+              request.getProductId(),
+              requestedTubes
+            );
       shuttlecockAmount =
-        (requestedPieces > 0 ? reservedProduct.getPiecePrice() : reservedProduct.getTubePrice()) *
+        (requestedPieces > 0
+          ? reservedProduct.getPiecePrice()
+          : reservedProduct.getTubePrice()) *
         (requestedPieces > 0 ? requestedPieces : requestedTubes);
     }
 
@@ -508,7 +605,10 @@ public class BookingController {
       CourtPrice courtPrice = courtPriceRepository
         .findByCourtTypeIdAndActiveTrue(court.getRoom().getCourtType().getId())
         .orElseThrow(() ->
-          new BusinessException(HttpStatus.CONFLICT, "Loại sân này chưa được cấu hình giá")
+          new BusinessException(
+            HttpStatus.CONFLICT,
+            "Loại sân này chưa được cấu hình giá"
+          )
         );
 
       Long courtAmount = calculateTotalAmount(
@@ -522,18 +622,29 @@ public class BookingController {
       bookings.add(booking);
     }
 
-    return bookingRepository.saveAll(bookings);
+    List<NormalBooking> saved = bookingRepository.saveAll(bookings);
+    // Booking tại quầy bắt đầu ngay được check-in và giao cầu trong cùng giao dịch.
+    if ("CHECKED_IN".equals(initialStatus)) {
+      for (NormalBooking booking : saved)
+        bookingInventoryService.issueForBooking(booking);
+    }
+    return saved;
   }
 
   // CUSTOMER hủy booking của chính mình.
   @Transactional
   @DeleteMapping("/{id}")
-  public NormalBooking cancelBooking(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+  public NormalBooking cancelBooking(
+    @PathVariable Long id,
+    @AuthenticationPrincipal Jwt jwt
+  ) {
     Long authenticatedUserId = Long.valueOf(jwt.getSubject());
 
     NormalBooking booking = bookingRepository
       .findByIdForSettlement(id)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking"));
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking")
+      );
 
     if (booking.getVisitor() != null) {
       throw new BusinessException(
@@ -542,8 +653,14 @@ public class BookingController {
       );
     }
 
-    if (booking.getUser() == null || !authenticatedUserId.equals(booking.getUser().getId())) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "Bạn không có quyền hủy booking này");
+    if (
+      booking.getUser() == null ||
+      !authenticatedUserId.equals(booking.getUser().getId())
+    ) {
+      throw new BusinessException(
+        HttpStatus.FORBIDDEN,
+        "Bạn không có quyền hủy booking này"
+      );
     }
 
     if ("CANCELLED".equals(booking.getStatus())) {
@@ -551,19 +668,33 @@ public class BookingController {
     }
 
     if ("CHECKED_IN".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã check-in nên không thể hủy");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã check-in nên không thể hủy"
+      );
     }
 
     if ("NO_SHOW".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã được ghi nhận NO_SHOW");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã được ghi nhận NO_SHOW"
+      );
     }
 
     if ("COMPLETED".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã hoàn thành nên không thể hủy");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã hoàn thành nên không thể hủy"
+      );
     }
 
-    LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-    LocalDateTime bookingStart = LocalDateTime.of(booking.getBookingDate(), booking.getStartTime());
+    LocalDateTime now = LocalDateTime.now(
+      java.time.ZoneId.of("Asia/Ho_Chi_Minh")
+    );
+    LocalDateTime bookingStart = LocalDateTime.of(
+      booking.getBookingDate(),
+      booking.getStartTime()
+    );
 
     long minutesUntilStart = Duration.between(now, bookingStart).toMinutes();
 
@@ -591,11 +722,17 @@ public class BookingController {
     @PathVariable Long id,
     @AuthenticationPrincipal Jwt jwt
   ) {
+    if (jwt == null) throw new BusinessException(
+      HttpStatus.UNAUTHORIZED,
+      "Cần đăng nhập"
+    );
     Long staffId = Long.valueOf(jwt.getSubject());
 
     User staff = userRepository
       .findById(staffId)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên")
+      );
 
     if (!"STAFF".equals(staff.getRole()) && !"ADMIN".equals(staff.getRole())) {
       throw new BusinessException(
@@ -605,8 +742,10 @@ public class BookingController {
     }
 
     NormalBooking booking = bookingRepository
-      .findById(id)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking"));
+      .findByIdForSettlement(id)
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking")
+      );
 
     if (booking.getVisitor() == null) {
       throw new BusinessException(
@@ -616,28 +755,46 @@ public class BookingController {
     }
 
     if ("CANCELLED".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã được hủy trước đó");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã được hủy trước đó"
+      );
     }
 
     if ("CHECKED_IN".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã check-in nên không thể hủy");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã check-in nên không thể hủy"
+      );
     }
 
     if ("NO_SHOW".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã được ghi nhận NO_SHOW");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã được ghi nhận NO_SHOW"
+      );
     }
 
     if ("COMPLETED".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã hoàn thành nên không thể hủy");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã hoàn thành nên không thể hủy"
+      );
     }
 
-    LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-    LocalDateTime bookingStart = LocalDateTime.of(booking.getBookingDate(), booking.getStartTime());
+    LocalDateTime now = LocalDateTime.now(
+      java.time.ZoneId.of("Asia/Ho_Chi_Minh")
+    );
+    LocalDateTime bookingStart = LocalDateTime.of(
+      booking.getBookingDate(),
+      booking.getStartTime()
+    );
 
-    long minutesUntilStart = Duration.between(now, bookingStart).toMinutes();
-
-    if (minutesUntilStart < 120) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Chỉ được hủy sân trước ít nhất 2 tiếng");
+    if (!bookingStart.isAfter(now.plusMinutes(30))) {
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Không được hủy trong 30 phút trước giờ chơi hoặc sau khi đã bắt đầu"
+      );
     }
 
     booking.setStatus("CANCELLED");
@@ -652,12 +809,17 @@ public class BookingController {
   // STAFF/ADMIN check-in booking.
   @Transactional
   @PostMapping("/{id}/check-in")
-  public NormalBooking checkInBooking(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+  public NormalBooking checkInBooking(
+    @PathVariable Long id,
+    @AuthenticationPrincipal Jwt jwt
+  ) {
     Long staffId = Long.valueOf(jwt.getSubject());
 
     User staff = userRepository
       .findById(staffId)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên")
+      );
 
     if (!"STAFF".equals(staff.getRole()) && !"ADMIN".equals(staff.getRole())) {
       throw new BusinessException(
@@ -667,23 +829,34 @@ public class BookingController {
     }
 
     if (!"ACTIVE".equals(staff.getStatus())) {
-      throw new BusinessException(HttpStatus.FORBIDDEN, "Tài khoản nhân viên không hoạt động");
+      throw new BusinessException(
+        HttpStatus.FORBIDDEN,
+        "Tài khoản nhân viên không hoạt động"
+      );
     }
 
     NormalBooking booking = bookingRepository
       .findByIdForSettlement(id)
-      .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking"));
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.NOT_FOUND, "Không tìm thấy booking")
+      );
 
     if ("CANCELLED".equals(booking.getStatus())) {
       throw new BusinessException(HttpStatus.CONFLICT, "Booking đã bị hủy");
     }
 
     if ("NO_SHOW".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã được ghi nhận là không đến");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã được ghi nhận là không đến"
+      );
     }
 
     if ("CHECKED_IN".equals(booking.getStatus())) {
-      throw new BusinessException(HttpStatus.CONFLICT, "Booking đã được check-in");
+      throw new BusinessException(
+        HttpStatus.CONFLICT,
+        "Booking đã được check-in"
+      );
     }
     if ("COMPLETED".equals(booking.getStatus())) {
       throw new BusinessException(
@@ -699,16 +872,27 @@ public class BookingController {
       );
     }
 
-    LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-    LocalDateTime bookingStart = LocalDateTime.of(booking.getBookingDate(), booking.getStartTime());
+    LocalDateTime now = LocalDateTime.now(
+      java.time.ZoneId.of("Asia/Ho_Chi_Minh")
+    );
+    LocalDateTime bookingStart = LocalDateTime.of(
+      booking.getBookingDate(),
+      booking.getStartTime()
+    );
     LocalDateTime finalCheckInDeadline = bookingStart.plusMinutes(30);
 
     if (now.isBefore(bookingStart)) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Chưa đến giờ nhận sân");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Chưa đến giờ nhận sân"
+      );
     }
 
     if (!now.isBefore(finalCheckInDeadline)) {
-      throw new BusinessException(HttpStatus.BAD_REQUEST, "Đã quá 30 phút nhận sân");
+      throw new BusinessException(
+        HttpStatus.BAD_REQUEST,
+        "Đã quá 30 phút nhận sân"
+      );
     }
 
     booking.setStatus("CHECKED_IN");
@@ -741,17 +925,26 @@ public class BookingController {
   public List<NormalBooking> getMyBookings(@AuthenticationPrincipal Jwt jwt) {
     Long userId = Long.valueOf(jwt.getSubject());
 
-    return bookingRepository.findByUser_IdOrderByBookingDateDescStartTimeDesc(userId);
+    return bookingRepository.findByUser_IdOrderByBookingDateDescStartTimeDesc(
+      userId
+    );
   }
 
-  private Long calculateTotalAmount(CourtPrice courtPrice, LocalTime startTime, LocalTime endTime) {
+  private Long calculateTotalAmount(
+    CourtPrice courtPrice,
+    LocalTime startTime,
+    LocalTime endTime
+  ) {
     if (
       startTime.isBefore(courtPrice.getOpeningTime()) ||
       endTime.isAfter(courtPrice.getClosingTime())
     ) {
       throw new BusinessException(
         HttpStatus.BAD_REQUEST,
-        "Chỉ được đặt sân từ " + courtPrice.getOpeningTime() + " đến " + courtPrice.getClosingTime()
+        "Chỉ được đặt sân từ " +
+          courtPrice.getOpeningTime() +
+          " đến " +
+          courtPrice.getClosingTime()
       );
     }
 
@@ -767,12 +960,15 @@ public class BookingController {
     }
 
     if (endTime.isAfter(peakStart)) {
-      LocalTime actualPeakStart = startTime.isAfter(peakStart) ? startTime : peakStart;
+      LocalTime actualPeakStart = startTime.isAfter(peakStart)
+        ? startTime
+        : peakStart;
 
       peakMinutes = Duration.between(actualPeakStart, endTime).toMinutes();
     }
 
-    long normalAmount = (courtPrice.getNormalPricePerHour() * normalMinutes) / 60;
+    long normalAmount =
+      (courtPrice.getNormalPricePerHour() * normalMinutes) / 60;
 
     long peakAmount = (courtPrice.getPeakPricePerHour() * peakMinutes) / 60;
 
@@ -793,11 +989,29 @@ public class BookingController {
     @PathVariable Long issueId,
     @AuthenticationPrincipal Jwt jwt
   ) {
-    return bookingBillService.cancelItem(id, issueId, Long.valueOf(jwt.getSubject()));
+    return bookingBillService.cancelItem(
+      id,
+      issueId,
+      Long.valueOf(jwt.getSubject())
+    );
   }
 
   @GetMapping("/{id}/receipt")
-  public BookingReceipt previewReceipt(@PathVariable Long id) {
+  public BookingReceipt previewReceipt(
+    @PathVariable Long id,
+    @AuthenticationPrincipal Jwt jwt
+  ) {
+    User staff = userRepository
+      .findById(Long.valueOf(jwt.getSubject()))
+      .orElseThrow(() ->
+        new BusinessException(HttpStatus.FORBIDDEN, "Không tìm thấy nhân viên")
+      );
+    if (
+      !List.of("ADMIN", "STAFF").contains(staff.getRole())
+    ) throw new BusinessException(
+      HttpStatus.FORBIDDEN,
+      "Chỉ Admin hoặc Staff được xem hóa đơn"
+    );
     return settlementService.preview(id);
   }
 
@@ -807,11 +1021,18 @@ public class BookingController {
     @RequestBody SettlementRequest request,
     @AuthenticationPrincipal Jwt jwt
   ) {
-    return settlementService.settle(id, request, Long.valueOf(jwt.getSubject()));
+    return settlementService.settle(
+      id,
+      request,
+      Long.valueOf(jwt.getSubject())
+    );
   }
 
   @PostMapping("/{id}/complete")
-  public BookingReceipt completeBooking(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+  public BookingReceipt completeBooking(
+    @PathVariable Long id,
+    @AuthenticationPrincipal Jwt jwt
+  ) {
     return settlementService.complete(id, Long.valueOf(jwt.getSubject()));
   }
 }
