@@ -1,142 +1,209 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  reactive,
+  ref,
+  watch,
+  onMounted,
+  onUnmounted,
+} from 'vue';
 import {
   loginWithIdentifier,
+  loginByGoogle,
   normalizePhone,
   registerCustomer,
-} from '../services/authService.js'
+} from '../services/authService.js';
 
-const emit = defineEmits(['login-success'])
-const props = defineProps({ initialMode: { type: String, default: 'login' } })
-const mode = ref(props.initialMode)
+import { mountGoogleButton } from '../services/googleIdentity.js';
+
+const emit = defineEmits(['login-success']);
+const props = defineProps({ initialMode: { type: String, default: 'login' } });
+const mode = ref(props.initialMode);
 watch(
   () => props.initialMode,
   (value) => switchMode(value),
-)
-const identifier = ref('')
-const password = ref('')
-const showPassword = ref(false)
-const showRegisterPassword = ref(false)
-const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
-const identifierInput = ref(null)
-const nameInput = ref(null)
+);
+const identifier = ref('');
+const password = ref('');
+const showPassword = ref(false);
+const showRegisterPassword = ref(false);
+const loading = ref(false);
+const errorMessage = ref('');
+const successMessage = ref('');
+const identifierInput = ref(null);
+const nameInput = ref(null);
 const registration = reactive({
   fullName: '',
   phone: '',
   email: '',
   password: '',
   confirmPassword: '',
-})
-const registering = computed(() => mode.value === 'register')
-const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+});
+const registering = computed(() => mode.value === 'register');
+const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 async function switchMode(nextMode) {
-  if (loading.value) return
-  mode.value = nextMode
-  errorMessage.value = ''
-  successMessage.value = ''
-  password.value = ''
-  registration.password = ''
-  registration.confirmPassword = ''
-  showPassword.value = false
-  showRegisterPassword.value = false
-  await nextTick()
-  if (nextMode === 'login') identifierInput.value?.focus()
-  else nameInput.value?.focus()
+  if (loading.value) return;
+  mode.value = nextMode;
+  errorMessage.value = '';
+  successMessage.value = '';
+  password.value = '';
+  registration.password = '';
+  registration.confirmPassword = '';
+  showPassword.value = false;
+  showRegisterPassword.value = false;
+  await nextTick();
+  if (nextMode === 'login') identifierInput.value?.focus();
+  else nameInput.value?.focus();
 }
 
 async function submitLogin() {
-  if (loading.value) return
-  errorMessage.value = ''
-  successMessage.value = ''
-  const value = identifier.value.trim()
+  if (loading.value) return;
+  errorMessage.value = '';
+  successMessage.value = '';
+  const value = identifier.value.trim();
   if (value.includes('@')) {
     if (!validEmail(value)) {
-      errorMessage.value = 'Vui lòng nhập email hợp lệ.'
-      return
+      errorMessage.value = 'Vui lòng nhập email hợp lệ.';
+      return;
     }
   } else if (!/^0[35789]\d{8}$/.test(normalizePhone(value))) {
-    errorMessage.value = 'Vui lòng nhập email hoặc số điện thoại Việt Nam hợp lệ.'
-    return
+    errorMessage.value =
+      'Vui lòng nhập email hoặc số điện thoại Việt Nam hợp lệ.';
+    return;
   }
   if (!password.value.trim()) {
-    errorMessage.value = 'Vui lòng nhập mật khẩu.'
-    return
+    errorMessage.value = 'Vui lòng nhập mật khẩu.';
+    return;
   }
   if (new TextEncoder().encode(password.value).length > 72) {
-    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.'
-    return
+    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.';
+    return;
   }
-  loading.value = true
+  loading.value = true;
   try {
     const result = await loginWithIdentifier({
       identifier: value,
       password: password.value,
-    })
-    password.value = ''
-    showPassword.value = false
-    emit('login-success', result)
+    });
+    password.value = '';
+    showPassword.value = false;
+    emit('login-success', result);
   } catch (error) {
-    errorMessage.value = error.message || 'Không thể đăng nhập.'
+    errorMessage.value = error.message || 'Không thể đăng nhập.';
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
 async function submitRegister() {
-  if (loading.value) return
-  errorMessage.value = ''
-  successMessage.value = ''
+  if (loading.value) return;
+  errorMessage.value = '';
+  successMessage.value = '';
   if (!registration.fullName.trim()) {
-    errorMessage.value = 'Vui lòng nhập họ và tên.'
-    return
+    errorMessage.value = 'Vui lòng nhập họ và tên.';
+    return;
   }
   if (!/^0[35789]\d{8}$/.test(normalizePhone(registration.phone))) {
-    errorMessage.value = 'Vui lòng nhập số điện thoại Việt Nam hợp lệ.'
-    return
+    errorMessage.value = 'Vui lòng nhập số điện thoại Việt Nam hợp lệ.';
+    return;
   }
   if (!validEmail(registration.email.trim())) {
-    errorMessage.value = 'Vui lòng nhập email hợp lệ.'
-    return
+    errorMessage.value = 'Vui lòng nhập email hợp lệ.';
+    return;
   }
-  if (registration.password.trim().length === 0 || registration.password.length < 8) {
-    errorMessage.value = 'Mật khẩu phải có ít nhất 8 ký tự.'
-    return
+  if (
+    registration.password.trim().length === 0 ||
+    registration.password.length < 8
+  ) {
+    errorMessage.value = 'Mật khẩu phải có ít nhất 8 ký tự.';
+    return;
   }
   if (new TextEncoder().encode(registration.password).length > 72) {
-    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.'
-    return
+    errorMessage.value = 'Mật khẩu không được vượt quá 72 byte.';
+    return;
   }
   if (registration.password !== registration.confirmPassword) {
-    errorMessage.value = 'Mật khẩu xác nhận không khớp.'
-    return
+    errorMessage.value = 'Mật khẩu xác nhận không khớp.';
+    return;
   }
-  loading.value = true
+  loading.value = true;
   try {
-    const result = await registerCustomer({ ...registration })
-    identifier.value = registration.email.trim().toLowerCase()
+    const result = await registerCustomer({ ...registration });
+    identifier.value = registration.email.trim().toLowerCase();
     Object.assign(registration, {
       fullName: '',
       phone: '',
       email: '',
       password: '',
       confirmPassword: '',
-    })
-    password.value = ''
-    showRegisterPassword.value = false
-    mode.value = 'login'
-    successMessage.value = result.message
-    loading.value = false
-    await nextTick()
-    identifierInput.value?.focus()
+    });
+    password.value = '';
+    showRegisterPassword.value = false;
+    mode.value = 'login';
+    successMessage.value = result.message;
+    loading.value = false;
+    await nextTick();
+    identifierInput.value?.focus();
   } catch (error) {
-    errorMessage.value = error.message || 'Không thể đăng ký.'
+    errorMessage.value = error.message || 'Không thể đăng ký.';
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
+
+const googleButton = ref(null);
+const googleLoading = ref(true);
+const googleError = ref('');
+const googleClientId =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  '959847691255-af0urgshhkrnconcpplar0g5c3g4qcvc.apps.googleusercontent.com';
+let googleDisposed = false;
+let googleCleanup;
+async function setupGoogle() {
+  googleLoading.value = true;
+  googleError.value = '';
+  try {
+    googleCleanup?.();
+    googleCleanup = await mountGoogleButton({
+      element: googleButton.value,
+      clientId: googleClientId,
+      onCredential: submitGoogle,
+      isActive: () => !googleDisposed && !!googleButton.value,
+    });
+  } catch (error) {
+    if (!googleDisposed)
+      googleError.value =
+        error.message || 'Không khởi tạo được đăng nhập Google.';
+  } finally {
+    if (!googleDisposed) googleLoading.value = false;
+  }
+}
+async function submitGoogle(response) {
+  if (loading.value || googleDisposed) return;
+  loading.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+  try {
+    const session = await loginByGoogle({ idToken: response?.credential });
+    if (googleDisposed) return;
+    password.value = '';
+    registration.password = '';
+    registration.confirmPassword = '';
+    emit('login-success', session);
+  } catch (error) {
+    if (!googleDisposed)
+      errorMessage.value = error.message || 'Không thể đăng nhập Google.';
+  } finally {
+    if (!googleDisposed) loading.value = false;
+  }
+}
+onMounted(setupGoogle);
+onUnmounted(() => {
+  googleDisposed = true;
+  googleCleanup?.();
+});
 </script>
 
 <template>
@@ -163,9 +230,15 @@ async function submitRegister() {
       </aside>
       <div class="login-card">
         <p class="form-label">
-          {{ registering ? 'CHÀO MỪNG THÀNH VIÊN MỚI' : 'CHÀO MỪNG BẠN TRỞ LẠI' }}
+          {{
+            registering ? 'CHÀO MỪNG THÀNH VIÊN MỚI' : 'CHÀO MỪNG BẠN TRỞ LẠI'
+          }}
         </p>
-        <div class="auth-switch" role="group" aria-label="Chọn đăng nhập hoặc đăng ký">
+        <div
+          class="auth-switch"
+          role="group"
+          aria-label="Chọn đăng nhập hoặc đăng ký"
+        >
           <button
             type="button"
             :class="{ active: !registering }"
@@ -193,10 +266,40 @@ async function submitRegister() {
               : 'Sử dụng email hoặc số điện thoại và mật khẩu của bạn.'
           }}
         </p>
+        <div class="google-auth-section" :aria-busy="googleLoading || loading">
+          <div :class="['google-button-wrap', { 'google-busy': loading }]">
+            <div ref="googleButton" class="google-button-host"></div>
+          </div>
+          <p v-if="googleLoading" class="google-note" role="status">
+            Đang tải đăng nhập Google…
+          </p>
+          <p v-if="googleError" class="login-error" role="alert">
+            {{ googleError }}
+            <button type="button" :disabled="loading" @click="setupGoogle">
+              Thử lại
+            </button>
+          </p>
+          <p class="google-note">
+            {{
+              registering
+                ? 'Google sẽ tạo tài khoản nếu bạn chưa có.'
+                : 'Tiếp tục bằng tài khoản Google của bạn.'
+            }}
+            Bổ sung và xác minh SĐT trước khi đặt sân.
+          </p>
+          <div class="auth-divider">
+            <span></span><small>HOẶC DÙNG EMAIL / SỐ ĐIỆN THOẠI</small
+            ><span></span>
+          </div>
+        </div>
         <p v-if="successMessage" class="auth-success" role="status">
           {{ successMessage }}
         </p>
-        <form v-if="!registering" :aria-busy="loading" @submit.prevent="submitLogin">
+        <form
+          v-if="!registering"
+          :aria-busy="loading"
+          @submit.prevent="submitLogin"
+        >
           <div class="field">
             <label for="login-identifier">Email hoặc số điện thoại</label>
             <input
@@ -239,14 +342,20 @@ async function submitRegister() {
               </button>
             </div>
           </div>
-          <p v-if="errorMessage" class="login-error" role="alert">{{ errorMessage }}</p>
+          <p v-if="errorMessage" class="login-error" role="alert">
+            {{ errorMessage }}
+          </p>
           <button class="submit-button" type="submit" :disabled="loading">
             {{ loading ? 'Đang đăng nhập…' : 'Đăng nhập'
             }}<span v-if="!loading" aria-hidden="true">→</span>
           </button>
           <p class="auth-footer">
             Chưa có tài khoản?
-            <button type="button" :disabled="loading" @click="switchMode('register')">
+            <button
+              type="button"
+              :disabled="loading"
+              @click="switchMode('register')"
+            >
               Đăng ký ngay
             </button>
           </p>
@@ -312,7 +421,9 @@ async function submitRegister() {
                 required
               /><button
                 type="button"
-                :aria-label="showRegisterPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
+                :aria-label="
+                  showRegisterPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'
+                "
                 :aria-pressed="showRegisterPassword"
                 aria-controls="register-password register-confirm"
                 :disabled="loading"
@@ -338,14 +449,20 @@ async function submitRegister() {
               required
             />
           </div>
-          <p v-if="errorMessage" class="login-error" role="alert">{{ errorMessage }}</p>
+          <p v-if="errorMessage" class="login-error" role="alert">
+            {{ errorMessage }}
+          </p>
           <button class="submit-button" type="submit" :disabled="loading">
             {{ loading ? 'Đang tạo tài khoản…' : 'Tạo tài khoản'
             }}<span v-if="!loading" aria-hidden="true">→</span>
           </button>
           <p class="auth-footer">
             Đã có tài khoản?
-            <button type="button" :disabled="loading" @click="switchMode('login')">
+            <button
+              type="button"
+              :disabled="loading"
+              @click="switchMode('login')"
+            >
               Đăng nhập
             </button>
           </p>
@@ -720,5 +837,52 @@ a:focus-visible {
 }
 .field input {
   box-sizing: border-box;
+}
+</style>
+
+<style scoped>
+.google-auth-section {
+  margin: 22px 0;
+}
+.google-button-host {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  width: 100%;
+}
+.google-busy {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.google-note {
+  margin: 12px 0;
+  color: #758072;
+  font-size: 11px;
+  line-height: 1.7;
+  text-align: center;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0;
+}
+.auth-divider span {
+  height: 1px;
+  flex: 1;
+  background: #e3e8de;
+}
+.auth-divider small {
+  color: #86907f;
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  text-align: center;
+}
+.google-auth-section .login-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 </style>

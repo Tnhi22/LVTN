@@ -1,11 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { publicRequest, money, time, todayVN } from '../services/customerPortalUtils.js'
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { publicRequest, money, time, todayVN } from '../services/customerPortalUtils.js';
 import {
   homeSupport,
   homeReviews,
   featuredTubeId,
-} from '../services/customerHomeConfig.js'
+} from '../services/customerHomeConfig.js';
 const quickNeeds = [
   { key: 'Premium', icon: '❄️', title: 'Thích mát lạnh?', detail: 'Khám phá Premium' },
   { key: 'Gold', icon: '💰', title: 'Tiết kiệm & mát vừa?', detail: 'Khám phá Gold' },
@@ -16,69 +16,70 @@ const quickNeeds = [
     title: 'Đi một mình tìm cạ?',
     detail: 'Daily Visitor · Giao lưu',
   },
-]
-const levels = ['TBY', 'TB', 'TB+']
-const sessions = ref([])
-const sessionLoading = ref(true)
-const sessionError = ref('')
-const refreshedAt = ref('')
-const selectedLevel = ref('TB')
-const tube = ref(null)
-const selectedType = ref('')
-const addTube = ref(false)
-const comboOpen = ref(false)
-let statusTimer
-let statusLoading = false
+];
+const levels = ['TBY', 'TB', 'TB+'];
+const sessions = ref([]);
+const sessionLoading = ref(true);
+const sessionError = ref('');
+const refreshedAt = ref('');
+const selectedLevel = ref('TB');
+const tube = ref(null);
+const selectedType = ref('');
+const addTube = ref(false);
+const comboOpen = ref(false);
+let statusTimer;
+let statusLoading = false;
 const visibleSessions = computed(() =>
   sessions.value.filter(
     (s) => String(s.skillLevel).trim().toUpperCase() === selectedLevel.value,
   ),
-)
-const supportPhone = computed(() => homeSupport.hotline.replace(/[^+\d]/g, ''))
+);
+const supportPhone = computed(() => homeSupport.hotline.replace(/[^+\d]/g, ''));
 async function refreshStatus() {
-  if (statusLoading) return
-  statusLoading = true
+  if (statusLoading) return;
+  statusLoading = true;
   try {
-    const data = await publicRequest('/api/courts/home-status')
-    sessions.value = data.sessions || []
-    refreshedAt.value = data.updatedAt?.slice(11, 19) || ''
-    sessionError.value = ''
+    const data = await publicRequest('/api/courts/home-status');
+    sessions.value = data.sessions || [];
+    refreshedAt.value = data.updatedAt?.slice(11, 19) || '';
+    sessionError.value = '';
   } catch (e) {
-    sessionError.value = 'Chưa tải được số chỗ trống. Bạn có thể xem lại ở trang đặt sân.'
+    sessionError.value =
+      'Chưa tải được số chỗ trống. Bạn có thể xem lại ở trang đặt sân.';
   } finally {
-    sessionLoading.value = false
-    statusLoading = false
+    sessionLoading.value = false;
+    statusLoading = false;
   }
 }
 async function loadTube() {
   try {
-    const data = await publicRequest('/api/courts/catalogue')
+    const data = await publicRequest('/api/courts/catalogue');
     const available = (data.products || []).filter(
       (p) => p.availableQuantityTubes > 0 && p.tubePrice > 0,
-    )
+    );
     tube.value =
       featuredTubeId == null
         ? available[0] || null
-        : available.find((p) => p.id === featuredTubeId) || null
+        : available.find((p) => p.id === featuredTubeId) || null;
   } catch {
-    tube.value = null
+    tube.value = null;
   }
 }
 function chooseCourt(type) {
-  selectedType.value = type
-  addTube.value = false
+  selectedType.value = type;
+  addTube.value = false;
   if (type === 'DailyVisitor' || !tube.value) {
-    window.location.hash = `booking?type=${type}&date=${todayVN()}`
-    return
+    window.location.hash = `booking?type=${type}&date=${todayVN()}`;
+    return;
   }
-  comboOpen.value = true
+  comboOpen.value = true;
 }
 function continueBooking() {
-  window.location.hash = `booking?type=${selectedType.value}&date=${todayVN()}${addTube.value && tube.value ? `&product=${tube.value.id}` : ''}`
-  comboOpen.value = false
+  window.location.hash = `booking?type=${selectedType.value}&date=${todayVN()}${addTube.value && tube.value ? `&product=${tube.value.id}` : ''}`;
+  comboOpen.value = false;
 }
 function closeCombo(event) {
-  if (event.key === 'Escape') comboOpen.value = false
+  if (event.key === 'Escape') comboOpen.value = false;
 }
 const slides = [
   {
@@ -102,15 +103,15 @@ const slides = [
     description: 'Tận hưởng cầu lông cùng những người có chung đam mê.',
     position: 'center 30%',
   },
-]
-const currentIndex = ref(0)
-const currentSlide = computed(() => slides[currentIndex.value])
-const paused = ref(false)
-const hovered = ref(false)
-const focused = ref(false)
-const reducedMotion = ref(false)
-let slideTimer
-let motionQuery
+];
+const currentIndex = ref(0);
+const currentSlide = computed(() => slides[currentIndex.value]);
+const paused = ref(false);
+const hovered = ref(false);
+const focused = ref(false);
+const reducedMotion = ref(false);
+let slideTimer;
+let motionQuery;
 const courtTypes = [
   {
     number: '01',
@@ -160,7 +161,7 @@ const courtTypes = [
     link: '#booking?type=DailyVisitor',
     action: 'Xem buổi chơi',
   },
-]
+];
 const benefits = [
   {
     icon: '↗',
@@ -186,7 +187,7 @@ const benefits = [
     description: 'Chọn cầu ống hoặc cầu lẻ trong bước đặt sân, nhận khi check-in.',
     state: '',
   },
-]
+];
 const steps = [
   {
     number: '01',
@@ -203,34 +204,32 @@ const steps = [
     title: 'Xác nhận đặt sân',
     description: 'Đăng nhập và kiểm tra thông tin trước khi đặt.',
   },
-]
+];
 function scrollToCourts() {
-  document
-    .getElementById('court-collections')
-    ?.scrollIntoView({
-      behavior: reducedMotion.value ? 'auto' : 'smooth',
-      block: 'start',
-    })
+  document.getElementById('court-collections')?.scrollIntoView({
+    behavior: reducedMotion.value ? 'auto' : 'smooth',
+    block: 'start',
+  });
 }
 function changeSlide(index) {
-  currentIndex.value = (index + slides.length) % slides.length
+  currentIndex.value = (index + slides.length) % slides.length;
 }
 function handleMotionChange(event) {
-  reducedMotion.value = event.matches
+  reducedMotion.value = event.matches;
 }
 function handleFocusOut(event) {
-  focused.value = event.currentTarget.contains(event.relatedTarget)
+  focused.value = event.currentTarget.contains(event.relatedTarget);
 }
 onMounted(() => {
-  refreshStatus()
-  loadTube()
+  refreshStatus();
+  loadTube();
   statusTimer = window.setInterval(() => {
-    if (!document.hidden) refreshStatus()
-  }, 30000)
-  window.addEventListener('keydown', closeCombo)
-  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
-  reducedMotion.value = motionQuery.matches
-  motionQuery.addEventListener('change', handleMotionChange)
+    if (!document.hidden) refreshStatus();
+  }, 30000);
+  window.addEventListener('keydown', closeCombo);
+  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion.value = motionQuery.matches;
+  motionQuery.addEventListener('change', handleMotionChange);
   slideTimer = window.setInterval(() => {
     if (
       !paused.value &&
@@ -239,20 +238,189 @@ onMounted(() => {
       !reducedMotion.value &&
       !document.hidden
     ) {
-      changeSlide(currentIndex.value + 1)
+      changeSlide(currentIndex.value + 1);
     }
-  }, 5500)
-})
+  }, 5500);
+});
 onUnmounted(() => {
-  window.clearInterval(statusTimer)
-  window.removeEventListener('keydown', closeCombo)
-  window.clearInterval(slideTimer)
-  motionQuery?.removeEventListener('change', handleMotionChange)
-})
+  window.clearInterval(statusTimer);
+  window.removeEventListener('keydown', closeCombo);
+  window.clearInterval(slideTimer);
+  motionQuery?.removeEventListener('change', handleMotionChange);
+});
+
+const playMode = ref('doubles');
+const scoringMode = ref(todayVN() >= '2027-01-04' ? 15 : 21);
+const tilt = ref({ x: 0, y: 0 });
+const scoring = computed(() =>
+  scoringMode.value === 21
+    ? { point: 21, tie: 20, cap: 30 }
+    : { point: 15, tie: 14, cap: 21 },
+);
+function moveArena(event) {
+  if (reducedMotion.value || event.pointerType !== 'mouse') return;
+  const box = event.currentTarget.getBoundingClientRect();
+  tilt.value = {
+    x: ((event.clientX - box.left) / box.width - 0.5) * 8,
+    y: ((event.clientY - box.top) / box.height - 0.5) * 8,
+  };
+}
+function resetArena() {
+  tilt.value = { x: 0, y: 0 };
+}
+const playSteps = [
+  {
+    icon: '◷',
+    title: 'Chuẩn bị trước khi chơi',
+    text: 'Chọn giày bám sân, chuẩn bị vợt và cầu. Khởi động nhẹ trước khi vào trận.',
+  },
+  {
+    icon: '⌁',
+    title: 'Cầm vợt & di chuyển',
+    text: 'Cầm vợt thoải mái, giữ tư thế sẵn sàng và trở về vị trí thuận lợi sau mỗi cú đánh.',
+  },
+  {
+    icon: '↗',
+    title: 'Giao cầu & giữ nhịp',
+    text: 'Giao cầu chéo ô, đánh qua lưới rồi phối hợp di chuyển để giữ cầu trong sân đối phương.',
+  },
+  {
+    icon: '✦',
+    title: 'Chơi vui, lên trình',
+    text: 'Bắt đầu với bạn cùng trình độ. Ưu tiên kiểm soát cầu, sau đó luyện phông, bỏ nhỏ và đập cầu.',
+  },
+];
+const basicRules = computed(() => [
+  {
+    icon: '◎',
+    title: 'Mỗi pha thắng, một điểm',
+    text: `Thắng 2 trong tối đa 3 ván. Mỗi ván đến ${scoring.value.point} điểm; khi ${scoring.value.tie}–${scoring.value.tie} phải hơn 2 điểm, chạm ${scoring.value.cap} là thắng.`,
+  },
+  {
+    icon: '↗',
+    title: 'Giao cầu đúng ô',
+    text: 'Giao chéo ô: điểm chẵn đứng ô phải, điểm lẻ ô trái. Người giao và nhận đứng trong ô, không giẫm vạch khi giao.',
+  },
+  {
+    icon: '↧',
+    title: 'Giao cầu đúng cách',
+    text: 'Theo luật giao cầu chuẩn BWF, toàn bộ quả cầu dưới 1,15 m khi chạm vợt. Chân giữ tiếp xúc mặt sân và không di chuyển trong động tác giao.',
+  },
+  {
+    icon: '▣',
+    title: 'Vạch sân là trong sân',
+    text:
+      playMode.value === 'singles'
+        ? 'Đánh đơn dùng biên dọc phía trong, dài hết sân. Giao cầu cũng dùng biên trong và đến vạch cuối sân.'
+        : 'Đánh đôi dùng biên dọc phía ngoài. Riêng giao cầu dùng vạch giao dài phía trong, không phải vạch cuối sân.',
+  },
+  {
+    icon: '×',
+    title: 'Nhận biết lỗi thường gặp',
+    text: 'Cầu ra ngoài, không qua lưới, chạm cơ thể; người hoặc vợt chạm lưới khi cầu còn trong cuộc đều có thể bị tính lỗi.',
+  },
+  {
+    icon: '♧',
+    title: 'Tôn trọng bạn chơi',
+    text: 'Thống nhất thể thức trước trận, gọi điểm rõ ràng và không làm đối thủ phân tâm. Ca giao lưu thực hiện theo hướng dẫn tại sân.',
+  },
+]);
 </script>
 <template>
   <div class="landing-view">
     <!-- Banner -->
+
+
+    <section class="cinema-experience" aria-labelledby="cinema-title">
+      <div class="cinema-grain" aria-hidden="true"></div>
+      <div class="container cinema-layout">
+        <div class="cinema-copy">
+          <p class="cinema-kicker"><span></span> YOUR NEXT MATCH STARTS HERE</p>
+          <h2 id="cinema-title">
+            Không chỉ đặt sân.<br /><em>Bắt đầu một<br />trải nghiệm.</em>
+          </h2>
+          <p>
+            Tiếng cầu chạm vợt. Nhịp chân trên sân. Một pha bóng khiến cả nhóm bật cười.
+            Đó là lý do mình luôn muốn trở lại.
+          </p>
+          <div class="cinema-chips">
+            <span>✦ Chọn chất sân</span><span>♙ Gặp bạn chơi</span
+            ><span>ϟ Giữ lửa đam mê</span>
+          </div>
+          <a href="#play-guide" class="cinema-learn"
+            >Mới chơi? Bắt đầu ở đây <span>↓</span></a
+          >
+        </div>
+        <div
+          class="arena-stage"
+          @pointermove="moveArena"
+          @pointerleave="resetArena"
+          :style="{ '--arena-x': tilt.x + 'deg', '--arena-y': tilt.y + 'deg' }"
+          role="img"
+          aria-label="Mô hình sân cầu lông với ánh sáng và phối cảnh 3D"
+        >
+          <div class="arena-halo" aria-hidden="true"></div>
+          <div class="arena-orbit orbit-one" aria-hidden="true"></div>
+          <div class="arena-orbit orbit-two" aria-hidden="true"></div>
+          <div class="arena-floor">
+            <svg viewBox="0 0 320 560" aria-hidden="true">
+              <defs>
+                <linearGradient id="carrot-floor" x2="1" y2="1">
+                  <stop stop-color="#315c49" />
+                  <stop offset="1" stop-color="#17352c" />
+                </linearGradient>
+              </defs>
+              <rect
+                x="5"
+                y="5"
+                width="310"
+                height="550"
+                rx="12"
+                fill="url(#carrot-floor)"
+              />
+              <rect
+                x="20"
+                y="30"
+                width="280"
+                height="500"
+                fill="none"
+                stroke="#e9efdf"
+                stroke-width="3"
+              />
+              <path
+                d="M46 30v500M274 30v500M20 60h280M20 210h280M20 350h280M20 500h280M160 30v180M160 350v180"
+                stroke="#e9efdf"
+                stroke-width="2"
+                fill="none"
+              />
+              <path d="M20 280h280" stroke="#ffb46a" stroke-width="5" />
+              <circle cx="230" cy="410" r="12" fill="#ffb46a" />
+              <circle cx="90" cy="150" r="12" fill="#efe1c7" />
+              <path
+                class="flight-path"
+                d="M230 410Q300 230 90 150"
+                fill="none"
+                stroke="#ffd19a"
+                stroke-width="3"
+                stroke-dasharray="7 8"
+              />
+            </svg>
+            <div class="arena-floor-edge"></div>
+          </div>
+          <div class="arena-shuttle" aria-hidden="true">✦</div>
+          <div class="arena-label label-one">
+            <span>01 / FEEL THE COURT</span><strong>Mỗi pha cầu, một cảm xúc.</strong>
+          </div>
+          <div class="arena-label label-two"><i></i> READY TO PLAY</div>
+          <span class="arena-coordinate" aria-hidden="true"
+            >CARROT / COURT EXPERIENCE</span
+          >
+        </div>
+      </div>
+    </section>
+
+
+
     <section class="landing-hero">
       <div class="container hero-layout">
         <div class="hero-copy">
@@ -364,6 +532,8 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+
+
     <section class="container quick-section" aria-label="Chọn sân theo nhu cầu">
       <div class="quick-title">
         <span class="landing-eyebrow">HÔM NAY BẠN MUỐN CHƠI THẾ NÀO?</span>
@@ -502,11 +672,7 @@ onUnmounted(() => {
           v-for="(level, i) in levels"
           :key="level"
           type="button"
-          :class="[
-            'level-card',
-            'level-' + i,
-            { selected: selectedLevel === level },
-          ]"
+          :class="['level-card', 'level-' + i, { selected: selectedLevel === level }]"
           :aria-pressed="selectedLevel === level"
           @click="selectedLevel = level"
         >
@@ -548,6 +714,173 @@ onUnmounted(() => {
         >Nhắn Zalo ↗</a
       >
     </aside>
+
+    <section id="play-guide" class="container play-guide" aria-labelledby="play-title">
+      <header class="play-heading">
+        <div>
+          <p class="landing-eyebrow">PLAYBOOK / CẦU LÔNG CHO MỌI NGƯỜI</p>
+          <h2 id="play-title">Chưa biết chơi?<br /><span>Vào sân cùng mình.</span></h2>
+        </div>
+        <p>
+          Hiểu cách chơi, nắm luật cơ bản.<br />Bạn đã sẵn sàng cho trận cầu đầu tiên.
+        </p>
+      </header>
+      <div class="play-step-grid">
+        <article v-for="(step, i) in playSteps" :key="step.title">
+          <div>
+            <span class="play-icon" aria-hidden="true">{{ step.icon }}</span
+            ><small>0{{ i + 1 }}</small>
+          </div>
+          <h3>{{ step.title }}</h3>
+          <p>{{ step.text }}</p>
+        </article>
+      </div>
+      <div class="rules-workspace">
+        <aside class="court-explainer">
+          <div class="guide-tabs" role="group" aria-label="Chọn hình thức chơi">
+            <button
+              :class="{ active: playMode === 'singles' }"
+              :aria-pressed="playMode === 'singles'"
+              @click="playMode = 'singles'"
+            >
+              ♙ Đánh đơn</button
+            ><button
+              :class="{ active: playMode === 'doubles' }"
+              :aria-pressed="playMode === 'doubles'"
+              @click="playMode = 'doubles'"
+            >
+              ♧ Đánh đôi
+            </button>
+          </div>
+          <h3>
+            {{ playMode === 'singles' ? 'Một người mỗi bên.' : 'Hai người mỗi bên.' }}
+          </h3>
+          <p>
+            {{
+              playMode === 'singles'
+                ? 'Biên dọc trong · Sân hẹp hơn'
+                : 'Biên dọc ngoài · Phối hợp cùng đồng đội'
+            }}
+          </p>
+          <svg
+            class="guide-court"
+            viewBox="0 0 320 560"
+            role="img"
+            :aria-label="
+              playMode === 'singles'
+                ? 'Đánh đơn: vùng chơi giữa hai biên dọc trong'
+                : 'Đánh đôi: vùng chơi toàn bộ biên ngoài'
+            "
+          >
+            <rect x="20" y="30" width="280" height="500" fill="#f6f0e5" />
+            <rect
+              :x="playMode === 'singles' ? 46 : 20"
+              y="30"
+              :width="playMode === 'singles' ? 228 : 280"
+              height="500"
+              fill="#dc9d4f22"
+            />
+            <rect
+              x="20"
+              y="30"
+              width="280"
+              height="500"
+              fill="none"
+              stroke="#b2a38b"
+              stroke-width="2"
+            />
+            <path
+              d="M46 30v500M274 30v500M20 60h280M20 210h280M20 350h280M20 500h280M160 30v180M160 350v180"
+              stroke="#b2a38b"
+              stroke-width="2"
+              fill="none"
+            />
+            <rect
+              :x="playMode === 'singles' ? 46 : 20"
+              :y="playMode === 'singles' ? 30 : 60"
+              :width="playMode === 'singles' ? 114 : 140"
+              :height="playMode === 'singles' ? 180 : 150"
+              fill="#df802c30"
+            />
+            <path d="M20 280h280" stroke="#b16d27" stroke-width="4" />
+            <path
+              d="M230 425Q260 240 95 145"
+              fill="none"
+              stroke="#b16d27"
+              stroke-width="3"
+              stroke-dasharray="6 7"
+            />
+            <circle cx="230" cy="425" r="9" fill="#b16d27" />
+            <circle cx="95" cy="145" r="7" fill="#b16d27" />
+            <text x="160" y="270" text-anchor="middle" fill="#8d662b" font-size="10">
+              LƯỚI
+            </text>
+          </svg>
+          <div class="court-legend">
+            <span><i></i> Vùng sân đang chơi</span
+            ><span><i></i> Ô nhận giao cầu chéo</span>
+          </div>
+          <small class="court-caption"
+            >Minh họa giao từ ô phải khi điểm chẵn. Sơ đồ giúp nhận biết vạch, không mô
+            phỏng tình huống thi đấu đầy đủ.</small
+          >
+        </aside>
+        <div class="rules-content">
+          <div class="rules-title">
+            <div>
+              <small>KNOW THE GAME</small>
+              <h3>Luật gọn. Chơi đúng.</h3>
+            </div>
+            <span>✦</span>
+          </div>
+          <div class="score-picker" role="group" aria-label="Chọn thể thức tính điểm">
+            <button
+              v-for="score in [21, 15]"
+              :key="score"
+              :class="{ active: scoringMode === score }"
+              :aria-pressed="scoringMode === score"
+              @click="scoringMode = score"
+            >
+              Thể thức {{ score }} điểm
+            </button>
+          </div>
+          <p class="score-note">
+            BWF chuyển sang 3×15 từ 04/01/2027; trước đó thể thức chuẩn là 3×21. Một số
+            giải/ca có thể áp dụng thể thức khác.
+          </p>
+          <div class="rules-grid">
+            <article v-for="rule in basicRules" :key="rule.title">
+              <span class="rule-icon" aria-hidden="true">{{ rule.icon }}</span>
+              <div>
+                <h4>{{ rule.title }}</h4>
+                <p>{{ rule.text }}</p>
+              </div>
+            </article>
+          </div>
+          <a
+            class="rules-source"
+            href="https://corporate.bwfbadminton.com/statutes/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Tham khảo luật chính thức BWF ↗</a
+          >
+        </div>
+      </div>
+      <div class="play-ready">
+        <span aria-hidden="true">🏸</span>
+        <div>
+          <h3>Không cần giỏi mới bắt đầu.</h3>
+          <p>
+            Chọn sân cho nhóm bạn hoặc Daily Visitor đúng trình độ. Từng buổi chơi sẽ giúp
+            bạn tự tin hơn.
+          </p>
+        </div>
+        <button class="landing-button button-dark" @click="scrollToCourts">
+          Tìm sân cho trận đầu ↗
+        </button>
+      </div>
+    </section>
+
     <!-- Hướng dẫn -->
     <section class="container landing-section journey-section">
       <div class="journey-copy">
@@ -712,7 +1045,7 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 750;
   transition:
-    background 160ms ease,
+    * background * 160ms ease,
     transform 160ms ease;
 }
 .landing-button:hover {
@@ -857,7 +1190,7 @@ onUnmounted(() => {
   background: #d8e1db;
   transition:
     width 160ms ease,
-    background 160ms ease;
+    * background * 160ms ease;
 }
 .slide-dots button.active span {
   width: 23px;
@@ -1357,7 +1690,6 @@ onUnmounted(() => {
     transform: none;
   }
 }
-
 /* Diện mạo thể thao, giữ nguyên ảnh của bạn. */
 .landing-view .container {
   width: min(1200px, calc(100% - 40px));
@@ -1506,7 +1838,6 @@ onUnmounted(() => {
     transform: none;
   }
 }
-
 .quick-section {
   padding-block: 32px 40px;
 }
@@ -1809,6 +2140,669 @@ onUnmounted(() => {
   }
   .combo-dialog {
     padding: 28px 20px;
+  }
+}
+
+.cinema-experience {
+  position: relative;
+  isolation: isolate;
+  background: #141c18;
+  color: #f8f1e5;
+  margin: 35px 0 20px;
+  overflow: hidden;
+}
+.cinema-experience::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 75% 35%, #407c552b, transparent 55%),
+    radial-gradient(ellipse at 5% 100%, #e9a44e12, transparent 50%);
+}
+.cinema-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    #fff1 4px
+  );
+  z-index: 2;
+}
+.cinema-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 30px;
+  padding-block: 75px;
+}
+.cinema-kicker {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #cfaf7e;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cinema-kicker > span {
+  width: 6px;
+  height: 6px;
+  background: #ecb468;
+  border-radius: 50%;
+  box-shadow: 0 0 0 5px #ecb46813;
+}
+.cinema-copy h2 {
+  font-size: clamp(32px, 4vw, 57px);
+  letter-spacing: -2px;
+  line-height: 1.1;
+  margin: 25px 0;
+}
+.cinema-copy em {
+  font-style: normal;
+  color: #edbd7b;
+}
+.cinema-copy > p:not(.cinema-kicker) {
+  max-width: 430px;
+  font-size: 13px;
+  color: #a4b0a5;
+  line-height: 1.9;
+}
+.cinema-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 25px 0;
+}
+.cinema-chips > span {
+  padding: 9px 12px;
+  border-radius: 30px;
+  border: 1px solid #ffffff18;
+  font-size: 10px;
+  color: #d2d8c9;
+}
+.cinema-learn {
+  display: inline-flex;
+  gap: 20px;
+  align-items: center;
+  color: #edbd7b;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 44px;
+}
+.cinema-learn span {
+  animation: learn-bounce 2s infinite;
+}
+.arena-stage {
+  position: relative;
+  height: 470px;
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  isolation: isolate;
+}
+.arena-floor {
+  position: absolute;
+  width: 250px;
+  height: 437px;
+  top: 15px;
+  left: 50%;
+  margin-left: -125px;
+  transform: rotateX(calc(48deg - var(--arena-y, 0deg)))
+    rotateZ(calc(-24deg + var(--arena-x, 0deg)));
+  transform-style: preserve-3d;
+  transition: transform 0.25s ease-out;
+  box-shadow: -20px 45px 60px #0008;
+  border-radius: 12px;
+}
+.arena-floor svg {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 15px #71966418);
+}
+.arena-floor-edge {
+  position: absolute;
+  inset: 5px 0 -12px;
+  border-radius: 12px;
+  background: #12221b;
+  transform: translateZ(-12px);
+  box-shadow: 0 0 0 1px #718d6150;
+}
+.flight-path {
+  animation: flight-dash 3s linear infinite;
+}
+.arena-halo {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 20%;
+  bottom: 5%;
+  background: radial-gradient(ellipse, #71995325, transparent 65%);
+  filter: blur(12px);
+}
+.arena-orbit {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  top: 20%;
+  height: 230px;
+  border: 1px solid #ebba7517;
+  border-radius: 50%;
+  transform: rotate(-20deg);
+  pointer-events: none;
+}
+.orbit-two {
+  inset: 18% 12% auto;
+  height: 280px;
+  transform: rotate(35deg);
+  border-color: #93bf7017;
+}
+.arena-shuttle {
+  position: absolute;
+  top: 25%;
+  right: 28%;
+  font-size: 43px;
+  color: #ffe4af;
+  text-shadow: 0 0 24px #edbd7b80;
+  animation: shuttle-float 5s ease-in-out infinite;
+}
+.arena-label {
+  position: absolute;
+  padding: 15px 18px;
+  border: 1px solid #dbdfc52a;
+  background: #25322beb;
+  box-shadow: 0 15px 35px #0003;
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  animation: label-float 6s ease-in-out infinite;
+}
+.label-one {
+  left: 0;
+  bottom: 65px;
+  display: grid;
+  gap: 7px;
+}
+.label-one > span {
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  color: #b69b71;
+}
+.label-one > strong {
+  font-size: 13px;
+}
+.label-two {
+  right: 0;
+  top: 65px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  animation-delay: -3s;
+}
+.label-two i {
+  height: 5px;
+  width: 5px;
+  background: #a7c583;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #a7c58380;
+}
+.arena-coordinate {
+  position: absolute;
+  right: 5%;
+  bottom: 25px;
+  color: #7e9283;
+  font-size: 7px;
+  letter-spacing: 3px;
+}
+.play-guide {
+  padding-block: 65px;
+  scroll-margin-top: 150px;
+}
+.play-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 25px;
+  margin-bottom: 30px;
+}
+.play-heading h2 {
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.1;
+  letter-spacing: -1.7px;
+  margin: 0;
+}
+.play-heading h2 span {
+  color: #ac7135;
+}
+.play-heading > p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #899083;
+}
+.play-step-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 15px;
+}
+.play-step-grid article {
+  padding: 23px 20px;
+  border: 1px solid #e9e1d3;
+  border-radius: 15px;
+  background: #fffcf7;
+  transition:
+    transform 0.3s,
+    box-shadow 0.3s;
+}
+.play-step-grid article:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 15px 35px #4934110b;
+}
+.play-step-grid article > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.play-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f4e5cf;
+  color: #a06d30;
+  font-size: 24px;
+}
+.play-step-grid article small {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ddd2bf;
+}
+.play-step-grid h3 {
+  font-size: 15px;
+  margin: 22px 0 12px;
+  line-height: 1.4;
+}
+.play-step-grid p {
+  font-size: 11px;
+  line-height: 1.85;
+  color: #87907f;
+  margin: 0;
+}
+.rules-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.35fr);
+  border: 1px solid #e5ded1;
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 28px;
+}
+.court-explainer {
+  padding: 25px;
+  background: #f8f4ec;
+  text-align: center;
+}
+.guide-tabs,
+.score-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.guide-tabs {
+  justify-content: center;
+}
+.guide-tabs button,
+.score-picker button {
+  min-height: 40px;
+  padding: 10px 13px;
+  border: 1px solid #e5dac7;
+  border-radius: 30px;
+  color: #8b785a;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.25s,
+    color 0.25s;
+}
+.guide-tabs button.active,
+.score-picker button.active {
+  background: #92632e;
+  border-color: #92632e;
+  color: #fff;
+}
+.court-explainer h3 {
+  font-size: 18px;
+  margin: 24px 0 10px;
+}
+.court-explainer > p {
+  font-size: 11px;
+  color: #95836a;
+}
+.guide-court {
+  height: 300px;
+  width: 100%;
+  margin: 8px auto;
+  transition: fill 0.3s;
+}
+.court-legend {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: 8px;
+  color: #93846d;
+}
+.court-legend > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.court-legend i {
+  width: 9px;
+  height: 9px;
+  background: #dc9d4f22;
+  border: 1px solid #ddc9a7;
+}
+.court-legend > span:last-child i {
+  background: #df802c30;
+  border-color: #d49f66;
+}
+.court-caption {
+  display: block;
+  font-size: 8px;
+  line-height: 1.8;
+  color: #a39580;
+  margin: 15px auto 0;
+  max-width: 230px;
+}
+.rules-content {
+  padding: 30px;
+  background: white;
+}
+.rules-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.rules-title small {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: #a78350;
+  font-weight: 800;
+}
+.rules-title h3 {
+  font-size: 27px;
+  letter-spacing: -1px;
+  margin: 8px 0 0;
+}
+.rules-title > span {
+  font-size: 40px;
+  color: #cca16a;
+}
+.score-note {
+  font-size: 9px;
+  line-height: 1.7;
+  color: #a19582;
+  margin: 15px 0 22px;
+}
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 20px;
+}
+.rules-grid article {
+  display: flex;
+  gap: 11px;
+  align-items: start;
+}
+.rule-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #f6eee1;
+  color: #a6763a;
+  font-size: 19px;
+}
+.rules-grid h4 {
+  margin: 4px 0 9px;
+  font-size: 12px;
+}
+.rules-grid p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.9;
+  color: #89917e;
+}
+.rules-source {
+  font-size: 10px;
+  color: #9b6d33;
+  display: inline-flex;
+  margin-top: 24px;
+  min-height: 34px;
+  align-items: center;
+}
+.play-ready {
+  margin-top: 22px;
+  padding: 22px 25px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-radius: 14px;
+  background: #f6f0e6;
+  border: 1px solid #e8decf;
+}
+.play-ready > span {
+  font-size: 35px;
+}
+.play-ready > div {
+  flex: 1;
+}
+.play-ready h3 {
+  font-size: 17px;
+  margin: 0 0 8px;
+}
+.play-ready p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #8f8a79;
+  margin: 0;
+}
+.play-ready button {
+  border-radius: 30px;
+  background: #93672f;
+  color: #fff;
+  white-space: nowrap;
+}
+@keyframes flight-dash {
+  to {
+    stroke-dashoffset: -90;
+  }
+}
+@keyframes shuttle-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-10deg);
+  }
+  50% {
+    transform: translate(-12px, -18px) rotate(15deg);
+  }
+}
+@keyframes label-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+@keyframes learn-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(5px);
+  }
+}
+@media (max-width: 950px) {
+  .cinema-layout {
+    gap: 15px;
+  }
+  .arena-stage {
+    height: 400px;
+  }
+  .arena-floor {
+    width: 210px;
+    height: 368px;
+    margin-left: -105px;
+  }
+  .label-one {
+    left: 0;
+    bottom: 30px;
+  }
+  .label-two {
+    top: 35px;
+  }
+  .play-step-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .rules-workspace {
+    grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr);
+  }
+  .rules-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .rules-content {
+    padding: 24px;
+  }
+  .guide-court {
+    height: 330px;
+  }
+}
+@media (max-width: 700px) {
+  .cinema-layout {
+    grid-template-columns: 1fr;
+    padding-block: 40px;
+  }
+  .cinema-copy h2 {
+    font-size: 40px;
+  }
+  .arena-stage {
+    height: 390px;
+    max-width: 440px;
+    width: 100%;
+    margin: auto;
+  }
+  .arena-floor {
+    width: 220px;
+    height: 385px;
+    margin-left: -110px;
+  }
+  .cinema-copy > p:not(.cinema-kicker) {
+    font-size: 12px;
+  }
+  .rules-workspace {
+    grid-template-columns: 1fr;
+  }
+  .guide-court {
+    height: 270px;
+  }
+  .rules-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .play-heading > p {
+    display: none;
+  }
+  .play-guide {
+    padding-block: 40px;
+  }
+  .play-ready {
+    flex-wrap: wrap;
+  }
+  .play-ready button {
+    width: 100%;
+  }
+  .court-explainer {
+    padding: 20px;
+  }
+  .label-one {
+    bottom: 40px;
+  }
+}
+@media (max-width: 430px) {
+  .play-step-grid {
+    gap: 10px;
+  }
+  .play-step-grid article {
+    padding: 17px 14px;
+  }
+  .play-step-grid h3 {
+    font-size: 13px;
+  }
+  .play-step-grid p {
+    font-size: 10px;
+  }
+  .rules-grid {
+    grid-template-columns: 1fr;
+  }
+  .cinema-copy h2 {
+    font-size: 35px;
+  }
+  .cinema-kicker {
+    font-size: 7px;
+  }
+  .arena-stage {
+    height: 345px;
+  }
+  .arena-floor {
+    width: 190px;
+    height: 332px;
+    margin-left: -95px;
+  }
+  .label-one strong {
+    font-size: 10px;
+  }
+  .label-one {
+    padding: 12px;
+  }
+  .label-two {
+    font-size: 7px;
+  }
+  .rules-content {
+    padding: 21px;
+  }
+  .play-ready {
+    padding: 18px;
+  }
+  .cinema-chips > span {
+    font-size: 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinema-experience *,
+  .play-guide * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .play-step-grid article:hover {
+    transform: none;
+  }
+  .arena-floor {
+    transform: rotateX(48deg) rotateZ(-24deg);
   }
 }
 </style>

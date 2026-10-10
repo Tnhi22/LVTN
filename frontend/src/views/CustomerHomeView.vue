@@ -1,390 +1,867 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { getCustomerData } from '../services/customerService.js'
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
+import { buildGroups, groupKey } from "../services/customerPortalUtils.js";
+import CourtImage from "../components/CourtImage.vue";
+import {
+  getCustomerData,
+  customerImageUrl,
+} from "../services/customerService.js";
 
-const props = defineProps({ auth: Object, page: { type: String, default: 'home' } })
-const emit = defineEmits(['navigate', 'session-expired', 'profile-updated'])
-const tabs = [
-  { id: 'home', label: 'Trang chủ', icon: '01' },
-  { id: 'booking', label: 'Đặt sân', icon: '02' },
-  { id: 'my-bookings', label: 'Lịch đặt của tôi', icon: '03' },
-  { id: 'history', label: 'Lịch sử đặt sân', icon: '04' },
-  { id: 'profile', label: 'Hồ sơ cá nhân', icon: '05' },
-]
-const loggedIn = computed(() => props.auth?.user?.role === 'CUSTOMER')
-const currentTab = computed(() => (props.page === 'courts' ? 'booking' : props.page))
-const title = computed(
-  () => tabs.find((t) => t.id === currentTab.value)?.label || 'Trang chủ',
-)
-const descriptions = {
-  home: 'Một lịch chơi mới, một ngày nhiều năng lượng.',
-  booking: 'Chọn ngày, giờ và sân phù hợp cho buổi chơi của bạn.',
-  'my-bookings': 'Theo dõi lịch chơi sắp tới và các lượt đang nhận sân.',
-  history: 'Xem lại những buổi chơi và trạng thái đặt sân của bạn.',
-  profile: 'Quản lý thông tin và bảo mật tài khoản.',
-}
-const vnDate = () =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
-const date = ref(vnDate())
-const startTime = ref('18:00')
-const endTime = ref('19:00')
-const schedule = ref(null)
-const selectedIds = ref([])
-const bookings = ref([])
-const profile = ref(null)
-const loadingSchedule = ref(false)
-const loadingAccount = ref(false)
-const scheduleError = ref('')
-const accountError = ref('')
-const message = ref('')
-const error = ref('')
-const saving = ref(false)
-const search = ref('')
-const statusFilter = ref('')
-const dialog = ref(null)
-const dialogElement = ref(null)
-const profileForm = reactive({ fullName: '' })
-const password = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
-const clock = ref(Date.now())
-let serverOffset = 0
-let timer
-let scheduleSequence = 0
-const controllers = new Set()
-const statusLabels = {
-  PENDING: 'Chờ nhận sân',
-  NO_SHOW_PENDING: 'Trễ giờ nhận sân',
-  CHECKED_IN: 'Đã nhận sân',
-  COMPLETED: 'Hoàn tất',
-  CANCELLED: 'Đã hủy',
-  NO_SHOW: 'Vắng mặt',
-}
-const money = (value) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
-    value || 0,
+const props = defineProps({
+  auth: Object,
+  page: { type: String, default: "booking" },
+  groupFilter: String,
+  roomFilter: String,
+  initialProduct: String,
+  initialDate: String,
+  initialStart: String,
+  initialEnd: String,
+  initialCourt: String,
+});
+const group = ref(props.groupFilter || "");
+const room = ref(props.roomFilter || "");
+const catalogue = ref({ products: [], dailySchedules: [] });
+const dailySessions = ref([]);
+const purchaseMode = ref(props.initialProduct ? "TUBE" : "NONE");
+const productId = ref(
+  props.initialProduct ? Number(props.initialProduct) : null,
+);
+const purchaseQuantity = ref(1);
+const acceptedRules = ref(false);
+const groups = computed(() => buildGroups(schedule.value?.courts || []));
+const filteredCourts = computed(() =>
+  (schedule.value?.courts || []).filter(
+    (c) =>
+      (!group.value || groupKey(c) === group.value) &&
+      groupKey(c) !== "DAILY_VISITOR" &&
+      (!room.value || String(c.roomId) === room.value),
+  ),
+);
+const selectedProduct = computed(() =>
+  catalogue.value.products.find((p) => p.id === productId.value),
+);
+const productChoices = computed(() =>
+  catalogue.value.products.filter(
+    (p) =>
+      p.availableQuantityTubes > 0 &&
+      (purchaseMode.value !== "PIECE" || p.piecePrice > 0),
+  ),
+);
+const extraTotal = computed(() =>
+  purchaseMode.value === "NONE"
+    ? 0
+    : (purchaseMode.value === "PIECE"
+        ? selectedProduct.value?.piecePrice
+        : selectedProduct.value?.tubePrice) * purchaseQuantity.value || 0,
+);
+const purchaseLimit = computed(() =>
+  selectedProduct.value
+    ? selectedProduct.value.availableQuantityTubes *
+      (purchaseMode.value === "PIECE" ? selectedProduct.value.piecesPerTube : 1)
+    : 0,
+);
+const purchaseHint = computed(() => {
+  if (purchaseMode.value === "NONE") return "";
+  if (selectedCourts.value.length !== 1)
+    return "Mua cầu kèm booking cần chọn đúng một sân.";
+  if (purchaseMode.value === "PIECE" && !selectedCourts.value[0]?.allowsPieces)
+    return "Loại sân này không hỗ trợ mua cầu lẻ online.";
+  if (!selectedProduct.value) return "Vui lòng chọn loại cầu.";
+  if (
+    !Number.isInteger(purchaseQuantity.value) ||
+    purchaseQuantity.value < 1 ||
+    purchaseQuantity.value > purchaseLimit.value
   )
-const time = (value) => value?.slice(0, 5) || '—'
+    return "Số lượng mua vượt mức có thể đặt hoặc không hợp lệ.";
+  return "";
+});
+const suggestions = computed(() => {
+  if (
+    !schedule.value ||
+    group.value === "DAILY_VISITOR" ||
+    date.value > schedule.value.maxBookingDate
+  )
+    return [];
+  const minutes = Math.max(60, duration.value || 60),
+    rows = [];
+  for (const c of filteredCourts.value) {
+    if (!c.active || !c.price) continue;
+    for (
+      let begin = minute(c.price.openingTime);
+      begin + minutes <= minute(c.price.closingTime);
+      begin += 30
+    ) {
+      const toTime = (m) =>
+        `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      const start = instant(date.value, toTime(begin)),
+        end = instant(date.value, toTime(begin + minutes));
+      if (
+        start <= clock.value ||
+        c.busy.some(
+          (b) =>
+            start < (b.end ? new Date(`${b.end}+07:00`).getTime() : Infinity) &&
+            end > new Date(`${b.start}+07:00`).getTime(),
+        )
+      )
+        continue;
+      rows.push({
+        court: c,
+        start: toTime(begin),
+        end: toTime(begin + minutes),
+      });
+    }
+  }
+  return rows
+    .sort(
+      (a, b) =>
+        a.start.localeCompare(b.start) ||
+        a.court.name.localeCompare(b.court.name),
+    )
+    .slice(0, 6);
+});
+async function chooseSuggestion(suggestion) {
+  startTime.value = suggestion.start;
+  endTime.value = suggestion.end;
+  await nextTick();
+  selectedIds.value = [suggestion.court.id];
+}
+function selectGroup(key) {
+  group.value = key;
+  room.value = "";
+  selectedIds.value = [];
+  acceptedRules.value = false;
+}
+async function loadCatalogue() {
+  try {
+    catalogue.value = await request("/api/courts/catalogue");
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+async function loadDaily() {
+  try {
+    dailySessions.value = await request(
+      `/api/daily-visitor-sessions/date/${date.value}`,
+    );
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+async function registerDaily() {
+  if (saving.value || !acceptedRules.value) return;
+  saving.value = true;
+  error.value = "";
+  try {
+    await request(
+      `/api/daily-visitor-participants/register?sessionId=${dialog.value.session.id}`,
+      { method: "POST" },
+    );
+    dialog.value = null;
+    navigate("my-bookings");
+    message.value = "Đã đăng ký một lượt Daily Visitor.";
+    await Promise.allSettled([loadAccount(), loadDaily()]);
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
+watch(
+  () => props.groupFilter,
+  (value) => {
+    selectGroup(value || "");
+  },
+);
+watch(
+  () => props.roomFilter,
+  (value) => {
+    room.value = value || "";
+    selectedIds.value = [];
+  },
+);
+watch(
+  () => props.initialProduct,
+  (value) => {
+    productId.value = value ? Number(value) : null;
+    purchaseMode.value = value ? "TUBE" : "NONE";
+  },
+);
+watch(
+  () => props.initialDate,
+  (value) => {
+    if (value) date.value = value;
+  },
+);
+watch(
+  () => props.initialStart,
+  (value) => {
+    if (value) startTime.value = value;
+  },
+);
+watch(
+  () => props.initialEnd,
+  (value) => {
+    if (value) endTime.value = value;
+  },
+);
+watch(
+  () => props.initialCourt,
+  () => loadSchedule(),
+);
+watch([purchaseMode, productId, purchaseQuantity], () => {
+  acceptedRules.value = false;
+});
+
+const emit = defineEmits(["navigate", "session-expired", "profile-updated"]);
+const tabs = [
+  { id: "home", label: "Trang chủ", icon: "01" },
+  { id: "booking", label: "Đặt sân", icon: "02" },
+  { id: "my-bookings", label: "Lịch đặt của tôi", icon: "03" },
+  { id: "history", label: "Lịch sử đặt sân", icon: "04" },
+  { id: "profile", label: "Hồ sơ cá nhân", icon: "05" },
+];
+const loggedIn = computed(() => props.auth?.user?.role === "CUSTOMER");
+const currentTab = computed(() =>
+  props.page === "courts" ? "booking" : props.page,
+);
+const title = computed(
+  () => tabs.find((t) => t.id === currentTab.value)?.label || "Trang chủ",
+);
+const descriptions = {
+  home: "Một lịch chơi mới, một ngày nhiều năng lượng.",
+  booking: "Chọn ngày, giờ và sân phù hợp cho buổi chơi của bạn.",
+  "my-bookings": "Theo dõi lịch chơi sắp tới và các lượt đang nhận sân.",
+  history: "Xem lại những buổi chơi và trạng thái đặt sân của bạn.",
+  profile: "Quản lý thông tin và bảo mật tài khoản.",
+};
+const vnDate = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(
+    new Date(),
+  );
+const date = ref(props.initialDate || vnDate());
+const startTime = ref(props.initialStart || "18:00");
+const endTime = ref(props.initialEnd || "19:00");
+const schedule = ref(null);
+const selectedIds = ref([]);
+const bookings = ref([]);
+const profile = ref(null);
+const waitingEntries = ref([]);
+const avatarFile = ref(null);
+const avatarPreview = ref("");
+const avatarInput = ref(null);
+const avatarFailed = ref(false);
+const avatarSrc = computed(
+  () => avatarPreview.value || customerImageUrl(profile.value?.avatarUrl),
+);
+function resetAvatarSelection() {
+  if (avatarPreview.value) URL.revokeObjectURL(avatarPreview.value);
+  avatarPreview.value = "";
+  avatarFile.value = null;
+  if (avatarInput.value) avatarInput.value.value = "";
+}
+function chooseAvatar(event) {
+  const file = event.target.files?.[0];
+  resetAvatarSelection();
+  // Lấy file trước khi reset input ở lần chọn tiếp theo.
+  if (!file) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    error.value = "Chọn ảnh JPG, PNG hoặc WEBP.";
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024 || !file.size) {
+    error.value = "Ảnh cần có dung lượng từ 1 byte đến 5 MB.";
+    return;
+  }
+  avatarFile.value = file;
+  avatarPreview.value = URL.createObjectURL(file);
+  avatarFailed.value = false;
+  error.value = "";
+}
+async function uploadAvatar() {
+  if (!avatarFile.value || saving.value) return;
+  saving.value = true;
+  error.value = "";
+  message.value = "";
+  try {
+    const form = new FormData();
+    form.append("file", avatarFile.value);
+    profile.value = await request("/api/users/me/avatar", {
+      method: "POST",
+      body: form,
+    });
+    resetAvatarSelection();
+    avatarFailed.value = false;
+    emit("profile-updated", profile.value);
+    message.value = "Ảnh đại diện đã được cập nhật.";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    saving.value = false;
+  }
+}
+function waitingStatusText(w) {
+  if (w.status === "OFFERED")
+    return waitingOfferAvailable(w)
+      ? "Đến lượt bạn · nhận chỗ trước " + time(w.offerExpiresAt?.slice(11))
+      : "Lời mời đã hết hạn";
+  return (
+    {
+      WAITING: "Đang chờ · vị trí " + (w.position || "đang cập nhật"),
+      CONFIRMED: "Đã xác nhận nhận chỗ",
+      EXPIRED: "Đã hết hạn chờ / nhận chỗ",
+      CANCELLED: "Đã rời danh sách chờ",
+      DECLINED: "Đã từ chối lời mời",
+      UNAVAILABLE: "Ca không còn nhận người chơi",
+    }[w.status] || w.status
+  );
+}
+function dailyReadiness(b) {
+  if (b.sessionStatus === "CANCELLED")
+    return { label: "Ca đã hủy", tone: "cancelled" };
+  if (b.sessionStatus === "CLOSED")
+    return { label: "Ca đã đóng", tone: "closed" };
+  if (b.registeredSlots == null || b.minParticipants == null)
+    return { label: "Đang cập nhật số người", tone: "pending" };
+  if (b.registeredSlots >= b.minParticipants)
+    return {
+      label:
+        b.registeredSlots >= b.maxParticipants
+          ? "Đã đủ người chơi · Đầy chỗ"
+          : "Đã đủ người chơi",
+      tone: "ready",
+    };
+  return {
+    label:
+      "Đang chờ đủ người · cần thêm " + (b.minParticipants - b.registeredSlots),
+    tone: "pending",
+  };
+}
+function waitingOfferAvailable(w) {
+  return (
+    w.status === "OFFERED" &&
+    new Date(`${w.offerExpiresAt}+07:00`).getTime() > clock.value
+  );
+}
+async function accountWaitlistAction(w, action) {
+  if (saving.value) return;
+  if (action === "confirm" && !waitingOfferAvailable(w)) {
+    error.value = "Lời mời đã hết hạn. Hãy làm mới danh sách.";
+    return;
+  }
+  saving.value = true;
+  error.value = "";
+  message.value = "";
+  try {
+    await request(
+      `/api/daily-visitor-waitlists/session/${w.sessionId}/${action}`,
+      { method: action === "leave" ? "DELETE" : "POST" },
+    );
+    message.value =
+      action === "confirm"
+        ? "Đã xác nhận slot Daily. Hẹn bạn trên sân!"
+        : "Đã rời danh sách chờ.";
+    await loadAccount();
+  } catch (e) {
+    error.value = e.message;
+    await loadAccount();
+  } finally {
+    saving.value = false;
+  }
+}
+const loadingSchedule = ref(false);
+const loadingAccount = ref(false);
+const scheduleError = ref("");
+const accountError = ref("");
+const message = ref("");
+const error = ref("");
+const saving = ref(false);
+const search = ref("");
+const statusFilter = ref("");
+const dialog = ref(null);
+const dialogElement = ref(null);
+const profileForm = reactive({ fullName: "" });
+const password = reactive({
+  currentPassword: "",
+  newPassword: "",
+  confirmPassword: "",
+});
+const clock = ref(Date.now());
+let serverOffset = 0;
+let timer;
+let scheduleSequence = 0;
+let accountSequence = 0;
+const controllers = new Set();
+const statusLabels = {
+  CONFIRMED: "Đã đăng ký Daily Visitor",
+  PENDING: "Chờ nhận sân",
+  NO_SHOW_PENDING: "Trễ giờ nhận sân",
+  CHECKED_IN: "Đã nhận sân",
+  COMPLETED: "Hoàn tất",
+  CANCELLED: "Đã hủy",
+  NO_SHOW: "Vắng mặt",
+};
+const money = (value) =>
+  new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(
+    value || 0,
+  );
+const time = (value) => value?.slice(0, 5) || "—";
 const formatDate = (value) =>
   value
-    ? new Date(`${value}T00:00:00+07:00`).toLocaleDateString('vi-VN', {
-        timeZone: 'Asia/Ho_Chi_Minh',
+    ? new Date(`${value}T00:00:00+07:00`).toLocaleDateString("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
       })
-    : '—'
-const minute = (value) => Number(value?.slice(0, 2)) * 60 + Number(value?.slice(3, 5))
-const instant = (day, hour) => new Date(`${day}T${time(hour)}:00+07:00`).getTime()
-const liveStatuses = ['PENDING', 'NO_SHOW_PENDING', 'CHECKED_IN']
+    : "—";
+const minute = (value) =>
+  Number(value?.slice(0, 2)) * 60 + Number(value?.slice(3, 5));
+const instant = (day, hour) =>
+  new Date(`${day}T${time(hour)}:00+07:00`).getTime();
+const liveStatuses = ["PENDING", "NO_SHOW_PENDING", "CHECKED_IN", "CONFIRMED"];
 const upcoming = computed(() =>
   bookings.value
     .filter((b) => liveStatuses.includes(b.status))
     .sort(
-      (a, b) => instant(a.bookingDate, a.startTime) - instant(b.bookingDate, b.startTime),
+      (a, b) =>
+        instant(a.bookingDate, a.startTime) -
+        instant(b.bookingDate, b.startTime),
     ),
-)
+);
 const history = computed(() =>
-  bookings.value
-    .filter((b) => !liveStatuses.includes(b.status))
-    .sort(
-      (a, b) => instant(b.bookingDate, b.startTime) - instant(a.bookingDate, a.startTime),
-    ),
-)
+  [...bookings.value].sort(
+    (a, b) =>
+      instant(b.bookingDate, b.startTime) - instant(a.bookingDate, a.startTime),
+  ),
+);
 const visibleBookings = computed(() =>
-  (currentTab.value === 'history' ? history.value : upcoming.value).filter(
+  (currentTab.value === "history" ? history.value : upcoming.value).filter(
     (b) =>
       (!statusFilter.value || b.status === statusFilter.value) &&
-      `${b.id} ${b.court?.name || ''} ${b.bookingDate}`
+      `${b.id} ${b.court?.name || ""} ${b.bookingDate}`
         .toLowerCase()
         .includes(search.value.trim().toLowerCase()),
   ),
-)
+);
 const selectedCourts = computed(() =>
-  (schedule.value?.courts || []).filter((c) => selectedIds.value.includes(c.id)),
-)
-const duration = computed(() => minute(endTime.value) - minute(startTime.value))
-const estimatedTotal = computed(() =>
-  selectedCourts.value.reduce((sum, c) => sum + estimate(c), 0),
-)
+  (schedule.value?.courts || []).filter((c) =>
+    selectedIds.value.includes(c.id),
+  ),
+);
+const duration = computed(
+  () => minute(endTime.value) - minute(startTime.value),
+);
+const estimatedTotal = computed(
+  () =>
+    selectedCourts.value.reduce((sum, c) => sum + estimate(c), 0) +
+    extraTotal.value,
+);
 const fullName = computed(
-  () => profile.value?.fullName || props.auth?.user?.fullName || 'Bạn',
-)
+  () => profile.value?.fullName || props.auth?.user?.fullName || "Bạn",
+);
 const initials = computed(() =>
   fullName.value
     .trim()
     .split(/\s+/)
     .slice(-2)
     .map((s) => s[0])
-    .join('')
+    .join("")
     .toUpperCase(),
-)
+);
 const finishedCount = computed(
-  () => history.value.filter((b) => b.status === 'COMPLETED').length,
-)
+  () => history.value.filter((b) => b.status === "COMPLETED").length,
+);
 
 async function request(path, options = {}) {
-  const controller = new AbortController()
-  controllers.add(controller)
-  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  const controller = new AbortController();
+  controllers.add(controller);
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
   try {
     return await getCustomerData(
       path,
-      props.auth?.accessToken || '',
+      props.auth?.accessToken || "",
       controller.signal,
       options,
-    )
+    );
   } catch (e) {
-    if (e.status === 401) emit('session-expired')
-    if (e.name === 'AbortError')
-      throw new Error('Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.')
-    throw e
+    if (e.status === 401) emit("session-expired");
+    if (e.name === "AbortError")
+      throw new Error("Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.");
+    throw e;
   } finally {
-    window.clearTimeout(timeout)
-    controllers.delete(controller)
+    window.clearTimeout(timeout);
+    controllers.delete(controller);
   }
 }
 async function loadSchedule() {
-  const sequence = ++scheduleSequence
-  loadingSchedule.value = true
-  scheduleError.value = ''
-  selectedIds.value = []
-  schedule.value = null
+  const sequence = ++scheduleSequence;
+  loadingSchedule.value = true;
+  scheduleError.value = "";
+  selectedIds.value = [];
+  schedule.value = null;
   try {
     const data = await request(
       `/api/courts/schedule?date=${encodeURIComponent(date.value)}`,
-    )
+    );
     if (sequence === scheduleSequence) {
-      schedule.value = data
-      const serverNow = new Date(`${data.serverTime}+07:00`).getTime()
+      schedule.value = data;
+      if (props.initialCourt) {
+        const court = data.courts.find(
+          (c) => String(c.id) === props.initialCourt,
+        );
+        if (court && !courtHint(court)) selectedIds.value = [court.id];
+      }
+      const serverNow = new Date(`${data.serverTime}+07:00`).getTime();
       if (Number.isFinite(serverNow)) {
-        serverOffset = serverNow - Date.now()
-        clock.value = Date.now() + serverOffset
+        serverOffset = serverNow - Date.now();
+        clock.value = Date.now() + serverOffset;
       }
     }
   } catch (e) {
-    if (sequence === scheduleSequence) scheduleError.value = e.message
+    if (sequence === scheduleSequence) scheduleError.value = e.message;
   } finally {
-    if (sequence === scheduleSequence) loadingSchedule.value = false
+    if (sequence === scheduleSequence) loadingSchedule.value = false;
   }
 }
 async function loadAccount() {
-  if (!loggedIn.value) return
-  loadingAccount.value = true
-  accountError.value = ''
+  if (!loggedIn.value) return;
+  const sequence = ++accountSequence;
+  const token = props.auth?.accessToken;
+  loadingAccount.value = true;
+  accountError.value = "";
   const results = await Promise.allSettled([
-    request('/api/bookings/my'),
-    request('/api/users/me'),
-  ])
-  if (results[0].status === 'fulfilled') bookings.value = results[0].value
-  if (results[1].status === 'fulfilled') {
-    profile.value = results[1].value
-    profileForm.fullName = profile.value.fullName || ''
+    request("/api/bookings/my"),
+    request("/api/users/me"),
+    request("/api/daily-visitor-participants/my"),
+    request("/api/customer/notifications/waitlists?includeHistory=true"),
+  ]);
+  if (sequence !== accountSequence || token !== props.auth?.accessToken) return;
+  bookings.value = [
+    ...(results[0].status === "fulfilled" ? results[0].value : []),
+    ...(results[2].status === "fulfilled"
+      ? results[2].value.map((b) => ({
+          ...b,
+          status: b.sessionStatus === "CANCELLED" ? "CANCELLED" : b.status,
+        }))
+      : []),
+  ];
+  waitingEntries.value =
+    results[3].status === "fulfilled" ? results[3].value : [];
+  if (results[1].status === "fulfilled") {
+    profile.value = results[1].value;
+    profileForm.fullName = profile.value.fullName || "";
   }
   accountError.value = results
-    .filter((r) => r.status === 'rejected')
+    .filter((r) => r.status === "rejected")
     .map((r) => r.reason.message)
-    .join(' ')
-  loadingAccount.value = false
+    .join(" ");
+  loadingAccount.value = false;
 }
 function courtHint(c) {
-  if (!c.active) return 'Sân tạm ngừng hoạt động'
-  if (!c.price) return 'Chưa có bảng giá'
+  if (date.value > schedule.value?.maxBookingDate)
+    return "Ngày chơi vượt hạn đặt sân";
+  if (!c.active) return "Sân tạm ngừng hoạt động";
+  if (!c.price) return "Chưa có bảng giá";
   if (duration.value < 60 || duration.value % 30 !== 0)
-    return 'Chọn thời lượng ít nhất 60 phút'
+    return "Chọn thời lượng ít nhất 60 phút";
   if (
     minute(startTime.value) < minute(c.price.openingTime) ||
     minute(endTime.value) > minute(c.price.closingTime)
   )
-    return 'Ngoài giờ mở cửa'
-  const start = instant(date.value, startTime.value)
-  const end = instant(date.value, endTime.value)
-  if (start <= clock.value) return 'Giờ chơi đã qua'
+    return "Ngoài giờ mở cửa";
+  const start = instant(date.value, startTime.value);
+  const end = instant(date.value, endTime.value);
+  if (start <= clock.value) return "Giờ chơi đã qua";
   const busy = c.busy.find(
     (b) =>
       start < (b.end ? new Date(`${b.end}+07:00`).getTime() : Infinity) &&
       end > new Date(`${b.start}+07:00`).getTime(),
-  )
-  return busy?.reason || ''
+  );
+  return busy?.reason || "";
 }
 function estimate(c) {
-  if (!c.price || duration.value <= 0) return 0
+  if (!c.price || duration.value <= 0) return 0;
   const start = minute(startTime.value),
     end = minute(endTime.value),
-    peak = minute(c.price.peakStartTime)
+    peak = minute(c.price.peakStartTime);
   return (
     Math.floor(
-      (Math.max(0, Math.min(end, peak) - start) * c.price.normalPricePerHour) / 60,
+      (Math.max(0, Math.min(end, peak) - start) * c.price.normalPricePerHour) /
+        60,
     ) +
-    Math.floor((Math.max(0, end - Math.max(start, peak)) * c.price.peakPricePerHour) / 60)
-  )
+    Math.floor(
+      (Math.max(0, end - Math.max(start, peak)) * c.price.peakPricePerHour) /
+        60,
+    )
+  );
 }
 function toggleCourt(c) {
-  if (courtHint(c) || saving.value) return
+  if (courtHint(c) || saving.value) return;
   selectedIds.value = selectedIds.value.includes(c.id)
     ? selectedIds.value.filter((id) => id !== c.id)
-    : [...selectedIds.value, c.id]
+    : [...selectedIds.value, c.id];
+}
+function dailyCancellationText(b) {
+  if (!b.daily || b.sessionStatus !== "CANCELLED") return "";
+  const minimum = b.minParticipants
+    ? ` (tối thiểu ${b.minParticipants} người)`
+    : "";
+  if (b.sessionCancelReason === "NOT_ENOUGH_REGISTERED_PLAYERS")
+    return `Ca Daily tự động hủy vì không đủ người đăng ký${minimum}.`;
+  if (b.sessionCancelReason === "NOT_ENOUGH_CHECKED_IN_PLAYERS")
+    return `Ca Daily tự động hủy vì không đủ người đến sân check-in${minimum}.`;
+  return b.sessionCancelReason
+    ? `Ca Daily đã bị hủy. Lý do: ${b.sessionCancelReason}`
+    : "Ca Daily đã bị hủy. Vui lòng liên hệ quầy để biết thêm thông tin.";
+}
+function cancelReason(b) {
+  if (dailyCancellationText(b)) return dailyCancellationText(b);
+  if (b.status === "CANCELLED") return "Booking này đã được hủy trước đó.";
+  if (b.status === "CHECKED_IN")
+    return "Booking đã check-in nên không thể hủy.";
+  if (b.status === "COMPLETED") return "Booking đã hoàn tất nên không thể hủy.";
+  if (b.status === "NO_SHOW")
+    return "Booking đã ghi nhận vắng mặt nên không thể hủy.";
+  if (
+    !(b.daily ? ["CONFIRMED"] : ["PENDING", "NO_SHOW_PENDING"]).includes(
+      b.status,
+    )
+  )
+    return "Trạng thái hiện tại không cho phép hủy.";
+  if (b.daily && ["CANCELLED", "CLOSED"].includes(b.sessionStatus))
+    return "Ca Daily đã bị hủy hoặc đã đóng.";
+  const remaining = instant(b.bookingDate, b.startTime) - clock.value;
+  if (!Number.isFinite(remaining))
+    return "Không xác định được giờ chơi. Vui lòng làm mới lịch.";
+  if (remaining <= 30 * 60000)
+    return "Không thể hủy khi còn 30 phút hoặc ít hơn đến giờ chơi.";
+  return "";
 }
 function canCancel(b) {
-  return (
-    ['PENDING', 'NO_SHOW_PENDING'].includes(b.status) &&
-    instant(b.bookingDate, b.startTime) - clock.value > 30 * 60000
-  )
+  return !cancelReason(b);
+}
+async function attemptCancel(b) {
+  message.value = "";
+  const reason = cancelReason(b);
+  if (reason) {
+    error.value = reason;
+    await nextTick();
+    document
+      .querySelector(".customer-alert.danger")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  openDialog({ mode: "cancel", booking: b });
 }
 function navigate(page) {
-  search.value = ''
-  statusFilter.value = ''
-  message.value = ''
-  error.value = ''
-  emit('navigate', page)
+  search.value = "";
+  statusFilter.value = "";
+  message.value = "";
+  error.value = "";
+  emit("navigate", page);
 }
 function openDialog(value) {
-  error.value = ''
-  dialog.value = value
+  error.value = "";
+  acceptedRules.value = false;
+  dialog.value = value;
 }
 function closeDialog() {
-  if (!saving.value) dialog.value = null
+  if (!saving.value) dialog.value = null;
 }
 function dialogKeys(event) {
-  if (event.key === 'Escape') closeDialog()
-  if (event.key !== 'Tab') return
+  if (event.key === "Escape") closeDialog();
+  if (event.key !== "Tab") return;
   const nodes = [
     ...dialogElement.value.querySelectorAll(
       'button:not(:disabled), input, select, [tabindex="0"]',
     ),
-  ]
+  ];
   if (!nodes.length) {
-    event.preventDefault()
-    return
+    event.preventDefault();
+    return;
   }
   const first = nodes[0],
-    last = nodes[nodes.length - 1]
+    last = nodes[nodes.length - 1];
   if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
+    event.preventDefault();
+    last.focus();
   } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
+    event.preventDefault();
+    first.focus();
   }
 }
-let previousFocus
+let previousFocus;
 watch(dialog, async (value) => {
   if (value) {
-    previousFocus = document.activeElement
-    await nextTick()
-    dialogElement.value?.focus()
-  } else previousFocus?.focus()
-})
+    previousFocus = document.activeElement;
+    await nextTick();
+    dialogElement.value?.focus();
+  } else previousFocus?.focus();
+});
 async function submitBooking() {
-  if (saving.value || !selectedCourts.value.length) return
-  if (selectedCourts.value.some((c) => courtHint(c))) {
-    error.value = 'Khung giờ đã thay đổi. Vui lòng chọn lại.'
-    return
+  if (saving.value || !selectedCourts.value.length || !acceptedRules.value)
+    return;
+  if (purchaseHint.value) {
+    error.value = purchaseHint.value;
+    return;
   }
-  saving.value = true
-  error.value = ''
+  if (selectedCourts.value.some((c) => courtHint(c))) {
+    error.value = "Khung giờ đã thay đổi. Vui lòng chọn lại.";
+    return;
+  }
+  saving.value = true;
+  error.value = "";
   try {
-    const created = await request('/api/bookings', {
-      method: 'POST',
+    const created = await request("/api/bookings", {
+      method: "POST",
       body: JSON.stringify({
         courtIds: selectedIds.value,
         bookingDate: date.value,
         startTime: startTime.value,
         endTime: endTime.value,
-        quantityTubes: 0,
+        productId: purchaseMode.value === "NONE" ? null : productId.value,
+        quantityTubes:
+          purchaseMode.value === "TUBE" ? purchaseQuantity.value : 0,
+        quantityPieces:
+          purchaseMode.value === "PIECE" ? purchaseQuantity.value : 0,
       }),
-    })
-    dialog.value = null
-    navigate('my-bookings')
-    message.value = `Đặt sân thành công${Array.isArray(created) ? ` · ${created.length} booking` : ''}. Bạn có thể xem chi tiết bên dưới.`
-    await Promise.allSettled([loadAccount(), loadSchedule()])
+    });
+    dialog.value = null;
+    navigate("my-bookings");
+    message.value = `Đặt sân thành công${Array.isArray(created) ? ` · ${created.length} booking` : ""}. Bạn có thể xem chi tiết bên dưới.`;
+    await Promise.allSettled([loadAccount(), loadSchedule()]);
   } catch (e) {
-    error.value = e.message
-    await loadSchedule()
+    error.value = e.message;
+    await loadSchedule();
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function cancelBooking() {
-  const b = dialog.value?.booking
-  if (saving.value || !b || !canCancel(b)) return
-  saving.value = true
-  error.value = ''
+  const b = dialog.value?.booking;
+  if (saving.value || !b) return;
+  if (!canCancel(b)) {
+    error.value = cancelReason(b);
+    return;
+  }
+  saving.value = true;
+  error.value = "";
   try {
-    await request(`/api/bookings/${b.id}`, { method: 'DELETE' })
-    dialog.value = null
-    message.value = `Đã hủy booking #${b.id}.`
-    await Promise.allSettled([loadAccount(), loadSchedule()])
+    await request(
+      b.daily
+        ? `/api/daily-visitor-participants/${b.id}/cancel`
+        : `/api/bookings/${b.id}`,
+      { method: "DELETE" },
+    );
+    dialog.value = null;
+    message.value = `Đã hủy booking #${b.id}.`;
+    await Promise.allSettled([loadAccount(), loadSchedule()]);
   } catch (e) {
-    error.value = e.message
-    await loadAccount()
+    error.value = e.message;
+    await loadAccount();
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function saveProfile() {
-  if (saving.value) return
-  saving.value = true
-  error.value = ''
-  message.value = ''
+  if (saving.value) return;
+  saving.value = true;
+  error.value = "";
+  message.value = "";
   try {
-    profile.value = await request('/api/users/me', {
-      method: 'PATCH',
+    profile.value = await request("/api/users/me", {
+      method: "PATCH",
       body: JSON.stringify({ fullName: profileForm.fullName.trim() }),
-    })
-    emit('profile-updated', profile.value)
-    message.value = 'Đã cập nhật thông tin cá nhân.'
+    });
+    emit("profile-updated", profile.value);
+    message.value = "Đã cập nhật thông tin cá nhân.";
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function changePassword() {
-  if (saving.value) return
-  error.value = ''
-  message.value = ''
+  if (saving.value) return;
+  error.value = "";
+  message.value = "";
   if (password.newPassword !== password.confirmPassword) {
-    error.value = 'Mật khẩu xác nhận không khớp.'
-    return
+    error.value = "Mật khẩu xác nhận không khớp.";
+    return;
   }
-  saving.value = true
+  saving.value = true;
   try {
-    await request('/api/auth/change-password', {
-      method: 'POST',
+    await request("/api/auth/change-password", {
+      method: "POST",
       body: JSON.stringify(password),
-    })
+    });
     Object.assign(password, {
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    })
-    message.value = 'Đổi mật khẩu thành công.'
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+    message.value = "Đổi mật khẩu thành công.";
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
-watch(date, loadSchedule)
+watch(date, () => {
+  loadSchedule();
+  loadDaily();
+  acceptedRules.value = false;
+});
 watch([startTime, endTime], () => {
-  selectedIds.value = []
-})
+  selectedIds.value = [];
+});
 watch(
   () => props.auth?.accessToken,
   () => {
-    bookings.value = []
-    profile.value = null
-    loadAccount()
-    loadSchedule()
+    bookings.value = [];
+    profile.value = null;
+    waitingEntries.value = [];
+    resetAvatarSelection();
+    loadAccount();
+    loadSchedule();
   },
-)
+);
+function refreshAccountAfterAction() {
+  if (
+    loggedIn.value &&
+    ["my-bookings", "history"].includes(currentTab.value) &&
+    !saving.value &&
+    !loadingAccount.value
+  )
+    loadAccount();
+}
+watch(currentTab, refreshAccountAfterAction);
 onMounted(() => {
-  loadSchedule()
-  loadAccount()
+  window.addEventListener("carrot:customer-updated", refreshAccountAfterAction);
+  loadSchedule();
+  loadAccount();
+  loadCatalogue();
+  loadDaily();
   timer = window.setInterval(() => {
-    clock.value = Date.now() + serverOffset
-  }, 30000)
-})
+    clock.value = Date.now() + serverOffset;
+    if (!document.hidden) refreshAccountAfterAction();
+  }, 30000);
+});
 onUnmounted(() => {
-  window.clearInterval(timer)
-  controllers.forEach((c) => c.abort())
-})
+  ++accountSequence;
+  window.removeEventListener(
+    "carrot:customer-updated",
+    refreshAccountAfterAction,
+  );
+  window.clearInterval(timer);
+  controllers.forEach((c) => c.abort());
+  resetAvatarSelection();
+});
 </script>
 
 <template>
@@ -397,10 +874,12 @@ onUnmounted(() => {
           <p>{{ descriptions[currentTab] }}</p>
         </div>
         <span class="customer-role">{{
-          loggedIn ? 'KHÁCH HÀNG' : 'KHÁCH THAM QUAN'
+          loggedIn ? "KHÁCH HÀNG" : "KHÁCH THAM QUAN"
         }}</span>
       </header>
-      <div v-if="message" class="customer-alert success" role="status">{{ message }}</div>
+      <div v-if="message" class="customer-alert success" role="status">
+        {{ message }}
+      </div>
       <div v-if="error && !dialog" class="customer-alert danger" role="alert">
         {{ error }}
       </div>
@@ -418,58 +897,66 @@ onUnmounted(() => {
           />
           <div class="customer-hero-content">
             <span class="customer-eyebrow"
-              ><span class="sport-dot"></span> CARROT BADMINTON / PLAY YOUR WAY</span
+              ><span class="sport-dot"></span> CARROT BADMINTON / PLAY YOUR
+              WAY</span
             >
             <p class="sport-welcome">
               {{
-                loggedIn ? `Chào ${fullName}. Lên sân thôi!` : 'Sân đã sẵn sàng. Còn bạn?'
+                loggedIn
+                  ? `Chào ${fullName}. Lên sân thôi!`
+                  : "Sân đã sẵn sàng. Còn bạn?"
               }}
             </p>
             <h1>VÀO SÂN.<br /><span>HẾT MÌNH.</span></h1>
             <p class="sport-description">
-              Một cú đập. Một pha cứu cầu. Một buổi chơi đáng nhớ.<br />Chọn sân, lên lịch
-              và mang năng lượng của bạn đến đây.
+              Một cú đập. Một pha cứu cầu. Một buổi chơi đáng nhớ.<br />Chọn
+              sân, lên lịch và mang năng lượng của bạn đến đây.
             </p>
             <div class="sport-hero-actions">
-              <button class="customer-button primary" @click="navigate('booking')">
+              <button
+                class="customer-button primary"
+                @click="navigate('booking')"
+              >
                 ĐẶT SÂN NGAY <span>↗</span>
               </button>
               <button
                 class="sport-text-button"
                 @click="navigate(loggedIn ? 'my-bookings' : 'login')"
               >
-                {{ loggedIn ? 'Lịch chơi của tôi' : 'Đăng nhập' }} <span>→</span>
+                {{ loggedIn ? "Lịch chơi của tôi" : "Đăng nhập" }}
+                <span>→</span>
               </button>
             </div>
           </div>
           <div class="sport-hero-caption">
-            <span>NO LIMITS. JUST PLAY.</span><small>YOUR COURT. YOUR GAME.</small>
+            <span>NO LIMITS. JUST PLAY.</span
+            ><small>YOUR COURT. YOUR GAME.</small>
           </div>
           <span class="sport-hero-number" aria-hidden="true">01 /</span>
         </section>
         <div class="sport-ribbon" aria-hidden="true">
-          <span>CHỌN GIỜ</span><b>↗</b><span>ĐẶT SÂN</span><b>↗</b><span>LÊN SÂN</span
-          ><b>↗</b><span>CHƠI HẾT MÌNH</span>
+          <span>CHỌN GIỜ</span><b>↗</b><span>ĐẶT SÂN</span><b>↗</b
+          ><span>LÊN SÂN</span><b>↗</b><span>CHƠI HẾT MÌNH</span>
         </div>
         <div class="customer-metrics">
           <article>
             <span>Lịch đang theo dõi</span
-            ><strong>{{ loggedIn ? upcoming.length : '—' }}</strong
+            ><strong>{{ loggedIn ? upcoming.length : "—" }}</strong
             ><small>Chờ nhận sân hoặc đã nhận sân</small>
           </article>
           <article>
             <span>Buổi chơi hoàn tất</span
-            ><strong>{{ loggedIn ? finishedCount : '—' }}</strong
+            ><strong>{{ loggedIn ? finishedCount : "—" }}</strong
             ><small>Lịch sử của riêng bạn</small>
           </article>
           <article>
             <span>Sân đang hoạt động</span
             ><strong>{{
               loadingSchedule
-                ? '…'
+                ? "…"
                 : schedule
                   ? schedule.courts.filter((c) => c.active).length
-                  : '—'
+                  : "—"
             }}</strong
             ><small>Kiểm tra giờ trống trước khi đặt</small>
           </article>
@@ -482,8 +969,8 @@ onUnmounted(() => {
               <p>
                 {{
                   loggedIn
-                    ? 'Đừng bỏ lỡ lịch hẹn trên sân.'
-                    : 'Đăng nhập để theo dõi lịch chơi của bạn.'
+                    ? "Đừng bỏ lỡ lịch hẹn trên sân."
+                    : "Đăng nhập để theo dõi lịch chơi của bạn."
                 }}
               </p>
             </div>
@@ -491,10 +978,12 @@ onUnmounted(() => {
               class="customer-button secondary"
               @click="navigate(loggedIn ? 'my-bookings' : 'login')"
             >
-              {{ loggedIn ? 'Xem lịch đặt' : 'Đăng nhập' }}
+              {{ loggedIn ? "Xem lịch đặt" : "Đăng nhập" }}
             </button>
           </div>
-          <div v-if="loadingAccount" class="customer-empty">Đang tải lịch chơi…</div>
+          <div v-if="loadingAccount" class="customer-empty">
+            Đang tải lịch chơi…
+          </div>
           <div v-else-if="upcoming.length" class="customer-next">
             <span class="customer-date-block">{{
               formatDate(upcoming[0].bookingDate)
@@ -502,9 +991,8 @@ onUnmounted(() => {
             <div>
               <strong>{{ upcoming[0].court?.name }}</strong>
               <p>
-                {{ time(upcoming[0].startTime) }} – {{ time(upcoming[0].endTime) }} · #{{
-                  upcoming[0].id
-                }}
+                {{ time(upcoming[0].startTime) }} –
+                {{ time(upcoming[0].endTime) }} · #{{ upcoming[0].id }}
               </p>
             </div>
             <span class="customer-status" :class="upcoming[0].status">{{
@@ -522,23 +1010,37 @@ onUnmounted(() => {
               <h2>Chọn sân. Bắt nhịp.</h2>
               <p>Giá theo giờ, cập nhật từ bảng giá của sân.</p>
             </div>
-            <button class="customer-button secondary" @click="navigate('booking')">
+            <button
+              class="customer-button secondary"
+              @click="navigate('booking')"
+            >
               Xem giờ trống
             </button>
           </div>
-          <p v-if="scheduleError" class="customer-alert danger">{{ scheduleError }}</p>
-          <div v-else-if="loadingSchedule" class="customer-empty">Đang tải bảng giá…</div>
+          <p v-if="scheduleError" class="customer-alert danger">
+            {{ scheduleError }}
+          </p>
+          <div v-else-if="loadingSchedule" class="customer-empty">
+            Đang tải bảng giá…
+          </div>
           <div v-else class="customer-price-grid">
             <article
-              v-for="c in (schedule?.courts || []).filter((c) => c.active && c.price)"
+              v-for="c in (schedule?.courts || []).filter(
+                (c) => c.active && c.price,
+              )"
               :key="c.id"
             >
               <strong>{{ c.name }}</strong
               ><small>{{ c.roomName }} · {{ c.typeName }}</small>
-              <p>{{ money(c.price.normalPricePerHour) }}<span> / giờ thường</span></p>
+              <p>
+                {{ money(c.price.normalPricePerHour)
+                }}<span> / giờ thường</span>
+              </p>
               <p>
                 {{ money(c.price.peakPricePerHour)
-                }}<span> / giờ cao điểm từ {{ time(c.price.peakStartTime) }}</span>
+                }}<span>
+                  / giờ cao điểm từ {{ time(c.price.peakStartTime) }}</span
+                >
               </p>
               <small
                 >Mở cửa {{ time(c.price.openingTime) }} –
@@ -549,151 +1051,351 @@ onUnmounted(() => {
         </section>
       </template>
       <template v-else-if="currentTab === 'booking'">
-        <section class="customer-card">
-          <div class="customer-section-title">
-            <div>
-              <h2>01 / Lên lịch chơi.</h2>
-              <p>Tối thiểu 60 phút, bắt đầu và kết thúc ở :00 hoặc :30.</p>
-            </div>
-            <button
-              class="customer-button secondary"
-              :disabled="loadingSchedule || saving"
-              @click="loadSchedule"
+        <section class="customer-type-picker">
+          <div>
+            <span class="customer-eyebrow">CHOOSE YOUR COURT</span>
+            <h2>Chọn phân khúc sân.</h2>
+          </div>
+          <div class="type-options">
+            <button :class="{ active: !group }" @click="selectGroup('')">
+              Tất cả sân thuê</button
+            ><button
+              v-for="g in groups"
+              :key="g.key"
+              :class="{ active: group === g.key }"
+              @click="selectGroup(g.key)"
             >
-              {{ loadingSchedule ? 'Đang tải…' : 'Làm mới lịch' }}
+              {{ g.name
+              }}<small
+                >{{ g.courts.length }} sân · {{ g.rooms.length }} phòng</small
+              >
             </button>
           </div>
-          <div class="customer-form-grid">
-            <label
-              >Ngày chơi<input
-                v-model="date"
-                :disabled="saving"
-                type="date"
-                :min="vnDate()"
-                required /></label
-            ><label
-              >Giờ bắt đầu<select v-model="startTime" :disabled="saving">
-                <option
-                  v-for="i in 48"
-                  :key="i"
-                  :value="`${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`"
-                >
-                  {{
-                    `${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`
-                  }}
-                </option>
-              </select></label
-            ><label
-              >Giờ kết thúc<select v-model="endTime" :disabled="saving">
-                <option
-                  v-for="i in 48"
-                  :key="i"
-                  :value="`${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`"
-                >
-                  {{
-                    `${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`
-                  }}
-                </option>
-              </select></label
-            >
-          </div>
-          <p v-if="duration < 60 || duration % 30 !== 0" class="customer-alert danger">
-            Giờ kết thúc phải sau giờ bắt đầu ít nhất 60 phút.
+          <p v-if="schedule?.maxBookingDate" class="booking-window">
+            Hạn đặt sân hiện tại:
+            <strong>{{ formatDate(schedule.maxBookingDate) }}</strong
+            >. Backend kiểm tra lại khi xác nhận.
           </p>
+          <label v-if="group && group !== 'DAILY_VISITOR'"
+            >Chọn phòng<select v-model="room">
+              <option value="">Tất cả phòng</option>
+              <option
+                v-for="r in groups.find((g) => g.key === group)?.rooms || []"
+                :key="r.id"
+                :value="String(r.id)"
+              >
+                {{ r.name }}
+              </option>
+            </select></label
+          >
         </section>
-        <div class="customer-booking-layout">
-          <section class="customer-card">
+        <template v-if="group === 'DAILY_VISITOR'"
+          ><section class="customer-card">
+            <h2>Buổi chơi chung.</h2>
+            <label
+              >Ngày tham gia<input v-model="date" type="date" :min="vnDate()"
+            /></label>
+            <p>
+              Cầu sử dụng chung được xử lý theo cấu hình của từng buổi chơi. Một
+              tài khoản đăng ký một lượt.
+            </p>
+            <div class="daily-session-grid">
+              <article v-for="session in dailySessions" :key="session.id">
+                <h3>
+                  {{ session.schedule?.court?.name }} ·
+                  {{ session.schedule?.skillLevel }}
+                </h3>
+                <p>
+                  {{ time(session.startTime) }} – {{ time(session.endTime) }}
+                </p>
+                <strong>{{
+                  session.schedule?.fixedFee
+                    ? money(session.schedule.fixedFee)
+                    : "Phí theo cấu hình buổi chơi"
+                }}</strong>
+                <p>
+                  Trạng thái: {{ session.status }} · Tối đa
+                  {{ session.maxParticipants }} người
+                </p>
+                <button
+                  class="customer-button primary"
+                  :disabled="
+                    session.status !== 'OPEN' ||
+                    instant(date, session.startTime) <= clock ||
+                    saving
+                  "
+                  @click="
+                    loggedIn
+                      ? openDialog({ mode: 'daily', session })
+                      : navigate('login')
+                  "
+                >
+                  {{ loggedIn ? "Đăng ký một lượt" : "Đăng nhập để đăng ký" }}
+                </button>
+              </article>
+              <p v-if="!dailySessions.length">
+                Chưa có buổi chơi cho ngày này.
+              </p>
+            </div>
+          </section></template
+        >
+        <template v-else>
+          <section v-if="suggestions.length" class="customer-card">
             <div class="customer-section-title">
               <div>
-                <h2>02 / Chọn sân của bạn.</h2>
-                <p>Bạn có thể chọn nhiều sân cho cùng một khung giờ.</p>
+                <h2>Khung giờ đang trống.</h2>
+                <p>
+                  Gợi ý theo ngày, phân khúc và thời lượng đã chọn. Bấm để điền
+                  sân và giờ.
+                </p>
               </div>
-              <span class="customer-tag">{{ formatDate(date) }}</span>
             </div>
-            <p v-if="scheduleError" class="customer-alert danger">{{ scheduleError }}</p>
-            <div v-else-if="loadingSchedule" class="customer-empty">
-              Đang kiểm tra lịch sân…
-            </div>
-            <div v-else-if="!schedule?.courts.length" class="customer-empty">
-              Chưa có sân để hiển thị.
-            </div>
-            <div v-else class="customer-court-grid">
+            <div class="suggestion-grid">
               <button
-                v-for="c in schedule.courts"
-                :key="c.id"
-                class="customer-court"
-                :class="{
-                  selected: selectedIds.includes(c.id),
-                  unavailable: !!courtHint(c),
-                }"
-                :disabled="!!courtHint(c) || saving"
-                :aria-pressed="selectedIds.includes(c.id)"
-                @click="toggleCourt(c)"
+                v-for="item in suggestions"
+                :key="`${item.court.id}-${item.start}`"
+                :disabled="saving"
+                @click="chooseSuggestion(item)"
               >
-                <span class="customer-court-top"
-                  ><strong>{{ c.name }}</strong
-                  ><span>{{ selectedIds.includes(c.id) ? '✓' : '＋' }}</span></span
-                ><small>{{ c.roomName }} · {{ c.typeName }}</small
-                ><span class="customer-court-price">{{
-                  c.price ? money(estimate(c)) : 'Chưa có giá'
-                }}</span
-                ><span class="customer-availability">{{
-                  courtHint(c) || 'Còn trống trong giờ đã chọn'
-                }}</span
-                ><small v-if="c.price"
-                  >Mở cửa {{ time(c.price.openingTime) }} –
-                  {{ time(c.price.closingTime) }}</small
-                >
+                <strong>{{ item.court.name }}</strong
+                ><span>{{ item.start }} – {{ item.end }}</span
+                ><small>{{ item.court.typeName }}</small>
               </button>
             </div>
           </section>
-          <aside class="customer-card customer-summary">
-            <span class="customer-eyebrow">BUỔI CHƠI CỦA BẠN</span>
-            <h2>Thông tin đặt sân</h2>
-            <dl>
+          <section class="customer-card">
+            <div class="customer-section-title">
               <div>
-                <dt>Ngày</dt>
-                <dd>{{ formatDate(date) }}</dd>
+                <h2>01 / Lên lịch chơi.</h2>
+                <p>Tối thiểu 60 phút, bắt đầu và kết thúc ở :00 hoặc :30.</p>
               </div>
-              <div>
-                <dt>Khung giờ</dt>
-                <dd>{{ startTime }} – {{ endTime }}</dd>
-              </div>
-              <div>
-                <dt>Thời lượng</dt>
-                <dd>{{ duration > 0 ? duration : 0 }} phút</dd>
-              </div>
-              <div>
-                <dt>Sân đã chọn</dt>
-                <dd>
-                  {{ selectedCourts.map((c) => c.name).join(', ') || 'Chưa chọn sân' }}
-                </dd>
-              </div>
-            </dl>
-            <div class="customer-total">
-              <span>Tổng tiền dự kiến</span><strong>{{ money(estimatedTotal) }}</strong>
+              <button
+                class="customer-button secondary"
+                :disabled="loadingSchedule || saving"
+                @click="loadSchedule"
+              >
+                {{ loadingSchedule ? "Đang tải…" : "Làm mới lịch" }}
+              </button>
             </div>
-            <p>
-              Giá cuối cùng được xác nhận khi đặt thành công. Lịch trống có thể thay đổi
-              khi người khác đặt sân.
-            </p>
-            <button
-              v-if="loggedIn"
-              class="customer-button primary"
-              :disabled="
-                !selectedCourts.length ||
-                loadingSchedule ||
-                saving ||
-                selectedCourts.some((c) => courtHint(c))
-              "
-              @click="openDialog({ mode: 'book' })"
+            <div class="customer-form-grid">
+              <label
+                >Ngày chơi<input
+                  v-model="date"
+                  :disabled="saving"
+                  type="date"
+                  :min="vnDate()"
+                  :max="schedule?.maxBookingDate"
+                  required /></label
+              ><label
+                >Giờ bắt đầu<select v-model="startTime" :disabled="saving">
+                  <option
+                    v-for="i in 48"
+                    :key="i"
+                    :value="`${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`"
+                  >
+                    {{
+                      `${String(Math.floor((i - 1) / 2)).padStart(2, "0")}:${(i - 1) % 2 ? "30" : "00"}`
+                    }}
+                  </option>
+                </select></label
+              ><label
+                >Giờ kết thúc<select v-model="endTime" :disabled="saving">
+                  <option
+                    v-for="i in 48"
+                    :key="i"
+                    :value="`${String(Math.floor((i - 1) / 2)).padStart(2, '0')}:${(i - 1) % 2 ? '30' : '00'}`"
+                  >
+                    {{
+                      `${String(Math.floor((i - 1) / 2)).padStart(2, "0")}:${(i - 1) % 2 ? "30" : "00"}`
+                    }}
+                  </option>
+                </select></label
+              >
+            </div>
+            <p
+              v-if="duration < 60 || duration % 30 !== 0"
+              class="customer-alert danger"
             >
-              Tiếp tục đặt sân</button
-            ><button v-else class="customer-button primary" @click="navigate('login')">
-              Đăng nhập để đặt sân
-            </button>
-          </aside>
-        </div>
+              Giờ kết thúc phải sau giờ bắt đầu ít nhất 60 phút.
+            </p>
+          </section>
+          <section class="customer-card">
+            <div class="customer-section-title">
+              <div>
+                <h2>03 / Cầu cho buổi chơi.</h2>
+                <p>Không bắt buộc. Chọn một sân nếu mua cầu kèm booking.</p>
+              </div>
+            </div>
+            <div class="customer-form-grid">
+              <label
+                >Hình thức mua<select v-model="purchaseMode" :disabled="saving">
+                  <option value="NONE">Không mua thêm (null)</option>
+                  <option value="TUBE">Mua theo ống</option>
+                  <option value="PIECE">Mua lẻ theo quả</option>
+                </select></label
+              ><label v-if="purchaseMode !== 'NONE'"
+                >Loại cầu<select v-model="productId" :disabled="saving">
+                  <option :value="null">Chọn loại cầu</option>
+                  <option v-for="p in productChoices" :key="p.id" :value="p.id">
+                    {{ p.name }} ·
+                    {{
+                      money(
+                        purchaseMode === "PIECE" ? p.piecePrice : p.tubePrice,
+                      )
+                    }}
+                  </option>
+                </select></label
+              ><label v-if="purchaseMode !== 'NONE'"
+                >Số lượng<input
+                  v-model.number="purchaseQuantity"
+                  type="number"
+                  min="1"
+                  :max="purchaseLimit"
+                  step="1"
+                  :disabled="saving"
+              /></label>
+            </div>
+            <p v-if="purchaseHint" class="customer-alert danger">
+              {{ purchaseHint }}
+            </p>
+            <p v-else-if="purchaseMode !== 'NONE'" class="booking-window">
+              Tiền cầu dự kiến: {{ money(extraTotal) }}. Giữ hàng khi đặt; xuất
+              kho khi staff/admin check-in.
+            </p>
+          </section>
+          <div class="customer-booking-layout">
+            <section class="customer-card">
+              <div class="customer-section-title">
+                <div>
+                  <h2>02 / Chọn sân của bạn.</h2>
+                  <p>Bạn có thể chọn nhiều sân cho cùng một khung giờ.</p>
+                </div>
+                <span class="customer-tag">{{ formatDate(date) }}</span>
+              </div>
+              <p v-if="scheduleError" class="customer-alert danger">
+                {{ scheduleError }}
+              </p>
+              <div v-else-if="loadingSchedule" class="customer-empty">
+                Đang kiểm tra lịch sân…
+              </div>
+              <div v-else-if="!filteredCourts.length" class="customer-empty">
+                Chưa có sân để hiển thị.
+              </div>
+              <div v-else class="customer-court-grid">
+                <button
+                  v-for="c in filteredCourts"
+                  :key="c.id"
+                  class="customer-court"
+                  :class="{
+                    selected: selectedIds.includes(c.id),
+                    unavailable: !!courtHint(c),
+                  }"
+                  :disabled="!!courtHint(c) || saving"
+                  :aria-pressed="selectedIds.includes(c.id)"
+                  @click="toggleCourt(c)"
+                >
+                  <span class="customer-court-top"
+                    ><strong>{{ c.name }}</strong
+                    ><span>{{
+                      selectedIds.includes(c.id) ? "✓" : "＋"
+                    }}</span></span
+                  ><small>{{ c.roomName }} · {{ c.typeName }}</small
+                  ><span class="customer-court-price">{{
+                    c.price ? money(estimate(c)) : "Chưa có giá"
+                  }}</span
+                  ><span class="customer-availability">{{
+                    courtHint(c) || "Còn trống trong giờ đã chọn"
+                  }}</span
+                  ><small v-if="c.price"
+                    >Mở cửa {{ time(c.price.openingTime) }} –
+                    {{ time(c.price.closingTime) }}</small
+                  >
+                </button>
+              </div>
+            </section>
+            <aside class="customer-card customer-summary">
+              <span class="customer-eyebrow">BUỔI CHƠI CỦA BẠN</span>
+              <h2>Thông tin đặt sân</h2>
+              <dl>
+                <div>
+                  <dt>Ngày</dt>
+                  <dd>{{ formatDate(date) }}</dd>
+                </div>
+                <div>
+                  <dt>Khung giờ</dt>
+                  <dd>{{ startTime }} – {{ endTime }}</dd>
+                </div>
+                <div>
+                  <dt>Thời lượng</dt>
+                  <dd>{{ duration > 0 ? duration : 0 }} phút</dd>
+                </div>
+                <div>
+                  <dt>Sân đã chọn</dt>
+                  <dd>
+                    {{
+                      selectedCourts.map((c) => c.name).join(", ") ||
+                      "Chưa chọn sân"
+                    }}
+                  </dd>
+                </div>
+              </dl>
+              <div class="customer-total">
+                <span>Tổng tiền dự kiến</span
+                ><strong>{{ money(estimatedTotal) }}</strong>
+              </div>
+              <p>
+                Giá cuối cùng được xác nhận khi đặt thành công. Lịch trống có
+                thể thay đổi khi người khác đặt sân.
+              </p>
+              <button
+                v-if="loggedIn"
+                class="customer-button primary"
+                :disabled="
+                  !selectedCourts.length ||
+                  !!purchaseHint ||
+                  loadingSchedule ||
+                  saving ||
+                  selectedCourts.some((c) => courtHint(c))
+                "
+                @click="openDialog({ mode: 'book' })"
+              >
+                Tiếp tục đặt sân</button
+              ><button
+                v-else
+                class="customer-button primary"
+                @click="navigate('login')"
+              >
+                Đăng nhập để đặt sân
+              </button>
+            </aside>
+          </div>
+        </template>
+        <section class="customer-card booking-policies">
+          <h2>Nội quy & chính sách.</h2>
+          <ul>
+            <li>
+              Đặt sân thuê tối thiểu 60 phút, giờ bắt đầu/kết thúc ở :00 hoặc
+              :30; chỉ đặt trong hạn backend cho phép.
+            </li>
+            <li>
+              Hủy booking chưa check-in khi còn hơn 30 phút trước giờ chơi.
+              Booking tại quầy do nhân viên xử lý theo nghiệp vụ riêng.
+            </li>
+            <li>
+              Sau 15 phút chưa nhận sân, booking chuyển sang chờ xác nhận vắng;
+              sau 30 phút ghi nhận NO_SHOW và nhả sân.
+            </li>
+            <li>
+              Vi phạm vắng mặt lần đầu: WARNING, không được đặt trong thời hạn 2
+              ngày. Vi phạm tiếp theo: SUSPENDED, tài khoản bị khóa cho đến khi
+              được xử lý theo nghiệp vụ quản trị.
+            </li>
+            <li>
+              Đặt kèm cầu chỉ giữ hàng. Staff/admin xác nhận check-in mới xuất
+              kho; hủy hoặc NO_SHOW trả phần hàng đã giữ.
+            </li>
+          </ul>
+        </section>
       </template>
       <template v-else-if="['my-bookings', 'history'].includes(currentTab)">
         <section v-if="!loggedIn" class="customer-card customer-empty">
@@ -708,14 +1410,16 @@ onUnmounted(() => {
             <div>
               <h2>
                 {{
-                  currentTab === 'history' ? 'Các lượt đã kết thúc' : 'Lịch chơi của bạn'
+                  currentTab === "history"
+                    ? "Hành trình trên sân"
+                    : "Lịch chơi của bạn"
                 }}
               </h2>
               <p>
                 {{
-                  currentTab === 'history'
-                    ? 'Hoàn tất, đã hủy và vắng mặt.'
-                    : 'Hủy booking khi còn hơn 30 phút trước giờ chơi.'
+                  currentTab === "history"
+                    ? "Tất cả lượt đặt sân, Daily và trạng thái của bạn."
+                    : "Hủy booking khi còn hơn 30 phút trước giờ chơi."
                 }}
               </p>
             </div>
@@ -727,6 +1431,61 @@ onUnmounted(() => {
               Làm mới
             </button>
           </div>
+          <section
+            v-if="waitingEntries.length"
+            class="account-waiting"
+            aria-label="Danh sách chờ Daily của bạn"
+          >
+            <div class="waiting-heading">
+              <span>🏸</span>
+              <div>
+                <h3>Danh sách chờ của tôi · {{ waitingEntries.length }}</h3>
+                <p>
+                  Tự động mời theo thứ tự. Bạn có tối đa 5 phút nhận chỗ, trước
+                  giờ bắt đầu ca.
+                </p>
+              </div>
+            </div>
+            <article
+              v-for="w in waitingEntries"
+              :key="w.id"
+              :class="[
+                { offered: waitingOfferAvailable(w) },
+                'waiting-' + w.status,
+              ]"
+            >
+              <div>
+                <strong
+                  >{{ formatDate(w.sessionDate) }} · {{ time(w.startTime) }} –
+                  {{ time(w.endTime) }}</strong
+                >
+                <p>
+                  {{ waitingStatusText(w) }}
+                  <span v-if="w.message" class="waiting-message">{{
+                    w.message
+                  }}</span>
+                </p>
+              </div>
+              <div class="customer-row-actions">
+                <button
+                  v-if="w.status === 'OFFERED'"
+                  class="customer-button primary"
+                  :disabled="saving || !waitingOfferAvailable(w)"
+                  @click="accountWaitlistAction(w, 'confirm')"
+                >
+                  Xác nhận nhận slot
+                </button>
+                <button
+                  v-if="['WAITING', 'OFFERED'].includes(w.status)"
+                  class="customer-button secondary"
+                  :disabled="saving"
+                  @click="accountWaitlistAction(w, 'leave')"
+                >
+                  Rời danh sách chờ
+                </button>
+              </div>
+            </article>
+          </section>
           <div class="customer-filters">
             <input
               v-model="search"
@@ -736,7 +1495,7 @@ onUnmounted(() => {
               <option value="">Tất cả trạng thái</option>
               <option
                 v-for="s in currentTab === 'history'
-                  ? ['COMPLETED', 'CANCELLED', 'NO_SHOW']
+                  ? [...liveStatuses, 'COMPLETED', 'CANCELLED', 'NO_SHOW']
                   : liveStatuses"
                 :key="s"
                 :value="s"
@@ -745,7 +1504,9 @@ onUnmounted(() => {
               </option></select
             ><span>{{ visibleBookings.length }} booking</span>
           </div>
-          <div v-if="loadingAccount" class="customer-empty">Đang tải booking…</div>
+          <div v-if="loadingAccount" class="customer-empty">
+            Đang tải booking…
+          </div>
           <div v-else-if="!visibleBookings.length" class="customer-empty">
             Không có booking phù hợp.<button
               v-if="currentTab !== 'history'"
@@ -767,22 +1528,65 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="b in visibleBookings" :key="b.id">
+                <tr
+                  v-for="b in visibleBookings"
+                  :key="`${b.daily ? 'daily' : 'normal'}-${b.id}`"
+                >
                   <td>
-                    <strong>{{ b.court?.name || 'Sân' }}</strong
+                    <strong>{{ b.court?.name || "Sân" }}</strong
                     ><small>#{{ b.id }}</small>
                   </td>
                   <td>
                     <strong>{{ formatDate(b.bookingDate) }}</strong
-                    ><small>{{ time(b.startTime) }} – {{ time(b.endTime) }}</small>
+                    ><small
+                      >{{ time(b.startTime) }} – {{ time(b.endTime) }}</small
+                    >
                   </td>
                   <td>
-                    <strong>{{ money(b.totalAmount) }}</strong>
+                    <strong>{{
+                      b.daily && b.totalAmount == null
+                        ? "Chờ chốt phí"
+                        : money(b.totalAmount)
+                    }}</strong>
                   </td>
                   <td>
                     <span class="customer-status" :class="b.status">{{
                       statusLabels[b.status] || b.status
                     }}</span>
+                    <div
+                      v-if="b.daily"
+                      class="daily-readiness"
+                      :class="dailyReadiness(b).tone"
+                    >
+                      <strong>{{ dailyReadiness(b).label }}</strong>
+                      <small v-if="b.registeredSlots != null"
+                        >{{ b.registeredSlots }}/{{ b.maxParticipants }} người
+                        đăng ký · {{ b.checkedInSlots ?? 0 }} đã check-in</small
+                      >
+                      <div
+                        v-if="
+                          b.registeredSlots != null && b.maxParticipants > 0
+                        "
+                        class="daily-capacity-track"
+                        aria-hidden="true"
+                      >
+                        <i
+                          :style="{
+                            width:
+                              Math.min(
+                                100,
+                                (b.registeredSlots / b.maxParticipants) * 100,
+                              ) + '%',
+                          }"
+                        ></i>
+                      </div>
+                    </div>
+                    <p
+                      v-if="dailyCancellationText(b)"
+                      class="daily-cancellation-note"
+                    >
+                      {{ dailyCancellationText(b) }}
+                    </p>
                   </td>
                   <td>
                     <div class="customer-row-actions">
@@ -790,17 +1594,15 @@ onUnmounted(() => {
                         class="customer-button secondary"
                         @click="openDialog({ mode: 'detail', booking: b })"
                       >
-                        Chi tiết</button
-                      ><button
-                        v-if="currentTab !== 'history'"
+                        Chi tiết
+                      </button>
+
+                      <button
+                        v-if="canCancel(b)"
                         class="customer-button cancel"
-                        :disabled="!canCancel(b) || saving"
-                        :title="
-                          canCancel(b)
-                            ? 'Hủy booking'
-                            : 'Chỉ hủy booking chưa nhận sân và còn hơn 30 phút trước giờ chơi'
-                        "
-                        @click="openDialog({ mode: 'cancel', booking: b })"
+                        :disabled="saving"
+                        title="Hủy booking"
+                        @click="attemptCancel(b)"
                       >
                         Hủy
                       </button>
@@ -823,21 +1625,93 @@ onUnmounted(() => {
         <div v-else-if="loadingAccount" class="customer-card customer-empty">
           Đang tải hồ sơ…
         </div>
-        <div v-else-if="profile" class="customer-profile-grid">
+        <div v-else-if="profile" class="customer-profile-grid profile-upgraded">
+          <section class="profile-cover">
+            <div>
+              <span>CARROT / PLAYER PROFILE</span>
+              <h2>Mỗi trận đấu.<br />Một dấu ấn của bạn.</h2>
+              <p>
+                Ảnh đại diện, lịch chơi và thông tin cá nhân — tất cả ở đây.
+              </p>
+            </div>
+            <div class="profile-cover-court" aria-hidden="true">
+              <i></i><b>PLAY<br />YOUR WAY.</b>
+            </div>
+          </section>
           <section class="customer-card">
             <div class="customer-profile-heading">
-              <span class="customer-avatar">{{ initials }}</span>
+              <span class="customer-avatar">
+                <img
+                  v-if="avatarSrc && !avatarFailed"
+                  :src="avatarSrc"
+                  alt="Ảnh đại diện của bạn"
+                  @error="avatarFailed = true"
+                />
+                <template v-else>{{ initials }}</template>
+              </span>
               <div>
                 <h2>{{ fullName }}</h2>
                 <span class="customer-tag">{{
-                  profile.status === 'ACTIVE'
-                    ? 'Đang hoạt động'
-                    : profile.status === 'WARNING'
-                      ? 'Đang cảnh báo'
-                      : profile.status === 'SUSPENDED'
-                        ? 'Tạm khóa'
+                  profile.status === "ACTIVE"
+                    ? "Đang hoạt động"
+                    : profile.status === "WARNING"
+                      ? "Đang cảnh báo"
+                      : profile.status === "SUSPENDED"
+                        ? "Tạm khóa"
                         : profile.status
                 }}</span>
+              </div>
+            </div>
+            <div class="profile-avatar-tools">
+              <input
+                ref="avatarInput"
+                class="avatar-file-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                aria-label="Chọn ảnh đại diện"
+                :disabled="saving"
+                @change="chooseAvatar"
+              />
+              <button
+                class="customer-button secondary"
+                type="button"
+                :disabled="saving"
+                @click="avatarInput?.click()"
+              >
+                📷 Chọn ảnh đại diện
+              </button>
+              <button
+                v-if="avatarFile"
+                class="customer-button primary"
+                type="button"
+                :disabled="saving"
+                @click="uploadAvatar"
+              >
+                {{ saving ? "Đang tải ảnh…" : "Lưu ảnh" }}
+              </button>
+              <button
+                v-if="avatarFile"
+                class="customer-button secondary"
+                type="button"
+                :disabled="saving"
+                @click="resetAvatarSelection"
+              >
+                Bỏ chọn
+              </button>
+              <small>JPG, PNG, WEBP · tối đa 5 MB</small>
+            </div>
+            <div class="profile-play-stats">
+              <div>
+                <strong>{{ upcoming.length }}</strong
+                ><span>Lịch đang hoạt động</span>
+              </div>
+              <div>
+                <strong>{{ finishedCount }}</strong
+                ><span>Buổi đã hoàn tất</span>
+              </div>
+              <div>
+                <strong>{{ waitingEntries.length }}</strong
+                ><span>Lượt trong hàng chờ</span>
               </div>
             </div>
             <form class="customer-stack" @submit.prevent="saveProfile">
@@ -856,20 +1730,22 @@ onUnmounted(() => {
                 >Email<input :value="profile.email || 'Chưa cập nhật'" readonly
               /></label>
               <p>
-                Số điện thoại và email dùng để định danh tài khoản. Liên hệ quầy nếu cần
-                thay đổi.
+                Số điện thoại và email dùng để định danh tài khoản. Liên hệ quầy
+                nếu cần thay đổi.
               </p>
               <button
                 class="customer-button primary"
                 :disabled="saving || !profileForm.fullName.trim()"
               >
-                {{ saving ? 'Đang xử lý…' : 'Lưu thông tin' }}
+                {{ saving ? "Đang xử lý…" : "Lưu thông tin" }}
               </button>
             </form>
           </section>
           <section class="customer-card">
             <h2>Bảo mật tài khoản</h2>
-            <p class="customer-muted">Đổi mật khẩu định kỳ để bảo vệ lịch đặt của bạn.</p>
+            <p class="customer-muted">
+              Đổi mật khẩu định kỳ để bảo vệ lịch đặt của bạn.
+            </p>
             <form
               v-if="profile.authProvider !== 'GOOGLE'"
               class="customer-stack"
@@ -905,14 +1781,19 @@ onUnmounted(() => {
               </button>
             </form>
             <p v-else>
-              Bạn đăng nhập bằng Google. Quản lý mật khẩu tại tài khoản Google của bạn.
+              Bạn đăng nhập bằng Google. Quản lý mật khẩu tại tài khoản Google
+              của bạn.
             </p>
           </section>
         </div>
       </template>
     </section>
     <Teleport to="body"
-      ><div v-if="dialog" class="customer-modal-overlay" @click.self="closeDialog">
+      ><div
+        v-if="dialog"
+        class="customer-modal-overlay"
+        @click.self="closeDialog"
+      >
         <section
           ref="dialogElement"
           class="customer-modal"
@@ -925,11 +1806,13 @@ onUnmounted(() => {
           <div class="customer-section-title">
             <h2 id="customer-dialog-title">
               {{
-                dialog.mode === 'book'
-                  ? 'Xác nhận đặt sân'
-                  : dialog.mode === 'cancel'
-                    ? 'Hủy booking?'
-                    : `Booking #${dialog.booking.id}`
+                dialog.mode === "daily"
+                  ? "Xác nhận Daily Visitor"
+                  : dialog.mode === "book"
+                    ? "Xác nhận đặt sân"
+                    : dialog.mode === "cancel"
+                      ? "Hủy booking?"
+                      : `Booking #${dialog.booking.id}`
               }}
             </h2>
             <button
@@ -941,17 +1824,22 @@ onUnmounted(() => {
               ×
             </button>
           </div>
-          <div v-if="error" class="customer-alert danger" role="alert">{{ error }}</div>
-          <template v-if="dialog.mode === 'book'"
-            ><p>{{ selectedCourts.map((c) => c.name).join(', ') }}</p>
-            <p>{{ formatDate(date) }} · {{ startTime }} – {{ endTime }}</p>
-            <div class="customer-total">
-              <span>Tổng dự kiến</span><strong>{{ money(estimatedTotal) }}</strong>
-            </div>
-            <p>
-              Mỗi sân sẽ tạo một booking riêng. Bạn có thể hủy từng booking khi còn hơn 30
-              phút trước giờ chơi.
+          <div v-if="error" class="customer-alert danger" role="alert">
+            {{ error }}
+          </div>
+          <template v-if="dialog.mode === 'daily'"
+            ><p>
+              {{ dialog.session.schedule?.court?.name }} ·
+              {{ formatDate(date) }} · {{ time(dialog.session.startTime) }} –
+              {{ time(dialog.session.endTime) }}
             </p>
+            <label class="rules-checkbox"
+              ><input
+                v-model="acceptedRules"
+                type="checkbox"
+                :disabled="saving"
+              />Tôi đã đọc nội quy và điều kiện hủy trước hơn 30 phút.</label
+            >
             <div class="customer-modal-actions">
               <button
                 class="customer-button secondary"
@@ -961,10 +1849,54 @@ onUnmounted(() => {
                 Quay lại</button
               ><button
                 class="customer-button primary"
-                :disabled="saving || !selectedCourts.length"
+                :disabled="saving || !acceptedRules"
+                @click="registerDaily"
+              >
+                {{ saving ? "Đang đăng ký…" : "Xác nhận đăng ký" }}
+              </button>
+            </div></template
+          >
+          <template v-else-if="dialog.mode === 'book'"
+            ><p>{{ selectedCourts.map((c) => c.name).join(", ") }}</p>
+            <p>{{ formatDate(date) }} · {{ startTime }} – {{ endTime }}</p>
+            <div class="customer-total">
+              <span>Tổng dự kiến</span
+              ><strong>{{ money(estimatedTotal) }}</strong>
+            </div>
+            <p>
+              Mỗi sân sẽ tạo một booking riêng. Bạn có thể hủy từng booking khi
+              còn hơn 30 phút trước giờ chơi.
+            </p>
+            <p v-if="purchaseMode !== 'NONE'">
+              {{ selectedProduct?.name }} · {{ purchaseQuantity }}
+              {{ purchaseMode === "PIECE" ? "quả" : "ống" }} ·
+              {{ money(extraTotal) }}
+            </p>
+            <label class="rules-checkbox"
+              ><input
+                v-model="acceptedRules"
+                type="checkbox"
+                :disabled="saving"
+              />Tôi đã đọc nội quy và điều kiện hủy sân.</label
+            >
+            <div class="customer-modal-actions">
+              <button
+                class="customer-button secondary"
+                :disabled="saving"
+                @click="closeDialog"
+              >
+                Quay lại</button
+              ><button
+                class="customer-button primary"
+                :disabled="
+                  saving ||
+                  !selectedCourts.length ||
+                  !acceptedRules ||
+                  !!purchaseHint
+                "
                 @click="submitBooking"
               >
-                {{ saving ? 'Đang đặt…' : 'Xác nhận đặt sân' }}
+                {{ saving ? "Đang đặt…" : "Xác nhận đặt sân" }}
               </button>
             </div></template
           ><template v-else
@@ -988,15 +1920,39 @@ onUnmounted(() => {
                 <dt>Trạng thái</dt>
                 <dd>{{ statusLabels[dialog.booking.status] }}</dd>
               </div>
+              <div
+                v-if="dailyCancellationText(dialog.booking)"
+                class="daily-cancellation-detail"
+              >
+                <dt>Lý do hủy ca Daily</dt>
+                <dd>{{ dailyCancellationText(dialog.booking) }}</dd>
+              </div>
+              <div v-if="dialog.booking.shuttlecockProduct">
+                <dt>Cầu mua kèm</dt>
+                <dd>
+                  {{ dialog.booking.shuttlecockProduct.name }} ·
+                  {{
+                    dialog.booking.shuttlecockQuantityPieces ||
+                    dialog.booking.shuttlecockQuantityTubes
+                  }}
+                  {{ dialog.booking.shuttlecockQuantityPieces ? "quả" : "ống" }}
+                </dd>
+              </div>
               <div>
                 <dt>Thành tiền</dt>
-                <dd>{{ money(dialog.booking.totalAmount) }}</dd>
+                <dd>
+                  {{
+                    dialog.booking.daily && dialog.booking.totalAmount == null
+                      ? "Chờ chốt phí"
+                      : money(dialog.booking.totalAmount)
+                  }}
+                </dd>
               </div>
             </dl>
             <template v-if="dialog.mode === 'cancel'"
               ><p>
-                Sau khi hủy, sân sẽ được mở cho người khác đặt. Bạn cần tạo booking mới
-                nếu muốn chơi lại.
+                Sau khi hủy, sân sẽ được mở cho người khác đặt. Bạn cần tạo
+                booking mới nếu muốn chơi lại.
               </p>
               <div class="customer-modal-actions">
                 <button
@@ -1007,19 +1963,21 @@ onUnmounted(() => {
                   Giữ booking</button
                 ><button
                   class="customer-button cancel"
-                  :disabled="saving || !canCancel(dialog.booking)"
+                  v-if="canCancel(dialog.booking)"
+                  :disabled="saving"
                   @click="cancelBooking"
                 >
-                  {{ saving ? 'Đang hủy…' : 'Xác nhận hủy' }}
+                  {{ saving ? "Đang hủy…" : "Xác nhận hủy" }}
                 </button>
               </div></template
             >
             <div v-else class="customer-modal-actions">
-              <button class="customer-button secondary" @click="closeDialog">Đóng</button
+              <button class="customer-button secondary" @click="closeDialog">
+                Đóng</button
               ><button
-                v-if="canCancel(dialog.booking)"
                 class="customer-button cancel"
-                @click="dialog.mode = 'cancel'"
+                :disabled="saving"
+                @click="attemptCancel(dialog.booking)"
               >
                 Hủy booking
               </button>
@@ -1111,7 +2069,7 @@ onUnmounted(() => {
   z-index: -3;
 }
 .customer-hero::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   z-index: -2;
@@ -1124,7 +2082,7 @@ onUnmounted(() => {
   );
 }
 .customer-hero::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -1436,7 +2394,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .customer-price-grid article::before {
-  content: '';
+  content: "";
   display: block;
   width: 30px;
   height: 3px;
@@ -1857,7 +2815,12 @@ onUnmounted(() => {
     object-position: 60% 25%;
   }
   .customer-hero::before {
-    background: linear-gradient(0deg, #131c18 3%, #131c18df 35%, #131c1840 100%);
+    background: linear-gradient(
+      0deg,
+      #131c18 3%,
+      #131c18df 35%,
+      #131c1840 100%
+    );
   }
   .customer-hero-content {
     padding: 30px 26px;
@@ -2007,6 +2970,524 @@ onUnmounted(() => {
     transition: none;
   }
   .customer-button.primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+.customer-type-picker {
+  padding: 28px;
+  border: 1px solid #e0e6d6;
+  border-radius: 6px;
+  background: #f8faf3;
+}
+.customer-type-picker h2 {
+  font-size: 26px;
+  letter-spacing: -1px;
+}
+.type-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 22px 0;
+}
+.type-options button {
+  padding: 16px 23px;
+  border: 1px solid #d9e3cc;
+  background: #fff;
+  border-radius: 4px;
+  color: #4c6a38;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.type-options button.active {
+  background: #173b24;
+  color: white;
+  border-color: #173b24;
+}
+.type-options small {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  margin-top: 7px;
+  opacity: 0.65;
+}
+.booking-window {
+  font-size: 12px;
+  color: #7f926b;
+  line-height: 1.8;
+}
+.customer-type-picker label {
+  max-width: 400px;
+}
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.suggestion-grid button {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid #d8e3ca;
+  background: #f9fcf3;
+  border-radius: 4px;
+  padding: 17px;
+  color: #3e632c;
+  cursor: pointer;
+}
+.suggestion-grid span {
+  font-size: 13px;
+  font-weight: 850;
+}
+.suggestion-grid small {
+  font-size: 9px;
+  color: #8ba174;
+}
+.daily-session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  margin-top: 24px;
+}
+.daily-session-grid article {
+  padding: 23px;
+  border: 1px solid #dce7cf;
+  border-radius: 5px;
+}
+.daily-session-grid h3 {
+  font-size: 19px;
+}
+.daily-session-grid p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #8ba174;
+}
+.rules-checkbox {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #667f52;
+}
+.rules-checkbox input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: #31572a;
+}
+.booking-policies ul {
+  padding-left: 20px;
+  color: #80966b;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.booking-policies li {
+  margin: 9px 0;
+}
+@media (max-width: 700px) {
+  .suggestion-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .daily-session-grid {
+    grid-template-columns: 1fr;
+  }
+  .customer-type-picker {
+    padding: 20px;
+  }
+  .type-options button {
+    padding: 13px 16px;
+  }
+}
+
+.profile-upgraded {
+  gap: 22px;
+}
+.profile-cover {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 38px;
+  background: #192a24;
+  color: #fff5e6;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 15px 36px #18281f1a;
+}
+.profile-cover span {
+  color: #f5b56a;
+  font-size: 11px;
+  letter-spacing: 2px;
+  font-weight: 800;
+}
+.profile-cover h2 {
+  margin: 14px 0;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -1px;
+}
+.profile-cover p {
+  color: #c3d0c6;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.profile-cover-court {
+  position: relative;
+  align-self: center;
+  width: 180px;
+  height: 160px;
+  display: grid;
+  place-items: center;
+  transform: rotate(-10deg);
+  border: 1px solid #dbf0df44;
+  background: #294b3a;
+  box-shadow: 14px 14px 0 #0003;
+}
+.profile-cover-court::before,
+.profile-cover-court::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border: 1px solid #ecffed44;
+}
+.profile-cover-court::after {
+  inset: 0;
+  top: 50%;
+  border: 0;
+  border-top: 1px solid #ecffed88;
+}
+.profile-cover-court b {
+  position: relative;
+  z-index: 1;
+  color: #ffbe68;
+  font-size: 27px;
+  line-height: 1.1;
+  font-style: italic;
+  text-shadow: 3px 4px #192a24;
+}
+.profile-upgraded > .customer-card {
+  border-radius: 22px;
+  padding: 30px;
+  background: #fffcf6;
+  border-color: #e9e3d9;
+  box-shadow: 0 12px 32px #242e2010;
+}
+.profile-upgraded .customer-profile-heading {
+  align-items: center;
+  gap: 20px;
+}
+.profile-upgraded .customer-avatar {
+  flex-shrink: 0;
+  width: 88px;
+  height: 88px;
+  font-size: 25px;
+  border-radius: 24px;
+  background: #e3eadb;
+  color: #24442b;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 5px #fff,
+    0 10px 24px #1b2a1b20;
+}
+.customer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-avatar-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0;
+}
+.profile-avatar-tools small {
+  flex-basis: 100%;
+  color: #7c8579;
+  font-size: 11px;
+}
+.avatar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.profile-play-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 24px 0;
+}
+.profile-play-stats div {
+  display: grid;
+  gap: 6px;
+  padding: 15px 10px;
+  border: 1px solid #e9e2d6;
+  border-radius: 14px;
+  background: #f5f1e8;
+}
+.profile-play-stats strong {
+  font-size: 24px;
+  color: #24432c;
+}
+.profile-play-stats span {
+  color: #6a7266;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.profile-upgraded .customer-stack input {
+  background: #fff;
+  border-radius: 11px;
+  border-color: #dfdfd3;
+}
+.profile-upgraded .customer-stack input[readonly] {
+  background: #f0eee7;
+  color: #7a8177;
+}
+.account-waiting {
+  margin: 20px 0;
+  padding: 20px;
+  border-radius: 17px;
+  background: #f5f0fc;
+  border: 1px solid #e0d2f0;
+}
+.waiting-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.waiting-heading > span {
+  font-size: 26px;
+}
+.waiting-heading h3 {
+  margin: 0 0 6px;
+  color: #503670;
+}
+.waiting-heading p,
+.account-waiting article p {
+  font-size: 12px;
+  color: #766886;
+  margin: 6px 0;
+  line-height: 1.6;
+}
+.account-waiting article {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin: 8px 0;
+  border-radius: 12px;
+  background: #fff;
+}
+.account-waiting article.offered {
+  border: 1px solid #bfa0e0;
+  box-shadow: 0 4px 15px #783fa514;
+}
+@media (max-width: 640px) {
+  .profile-cover {
+    padding: 26px;
+  }
+  .profile-cover-court {
+    display: none;
+  }
+  .profile-upgraded > .customer-card {
+    padding: 22px;
+  }
+  .profile-upgraded .customer-profile-heading {
+    align-items: flex-start;
+  }
+  .profile-upgraded .customer-avatar {
+    width: 70px;
+    height: 70px;
+    border-radius: 20px;
+  }
+  .account-waiting article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.daily-cancellation-note {
+  max-width: 290px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #df8850;
+  border-radius: 7px;
+  background: #fff2e5;
+  color: #86441e;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.customer-detail .daily-cancellation-detail {
+  background: #fff2e5;
+  border-radius: 12px;
+  padding: 14px;
+}
+.daily-cancellation-detail dd {
+  color: #86441e;
+  line-height: 1.6;
+}
+.account-waiting {
+  background: linear-gradient(120deg, #f5f0fc, #fff9ee);
+}
+.account-waiting article.offered {
+  border-left: 4px solid #9860c5;
+}
+.account-waiting article.offered strong {
+  color: #60317d;
+}
+
+/* Shared cinematic account history */
+.customer-account .customer-card,
+.customer-account .customer-panel {
+  border-radius: 20px;
+}
+.account-waiting {
+  background:
+    radial-gradient(ellipse at top right, #294e3e, transparent 65%), #15251d;
+  color: #eef5ec;
+  border: 1px solid #365343;
+  border-radius: 22px;
+  box-shadow: 0 16px 40px rgba(15, 35, 22, 0.13);
+  padding: 24px;
+}
+.account-waiting .waiting-heading h3 {
+  color: #fff;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+.account-waiting .waiting-heading p {
+  color: #b3c7b8;
+  line-height: 1.7;
+}
+.account-waiting article {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  padding: 18px;
+  transition:
+    border-color 0.2s,
+    transform 0.2s;
+}
+.account-waiting article:hover {
+  border-color: #a4ba9d;
+  transform: translateY(-2px);
+}
+.account-waiting article strong {
+  color: #edf4e9;
+}
+.account-waiting article p {
+  color: #b6c8b9;
+}
+.account-waiting article.offered {
+  background: rgba(238, 188, 115, 0.12);
+  border-color: #d7a962;
+}
+.account-waiting article.offered strong {
+  color: #f5cc8d;
+}
+.account-waiting .waiting-message {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 6px;
+}
+.account-waiting .customer-button.primary {
+  background: #edbd7c;
+  color: #18251d;
+  border-color: #edbd7c;
+}
+.account-waiting .customer-button.secondary {
+  background: transparent;
+  color: #d9e9dc;
+  border-color: #58735e;
+}
+.account-waiting .waiting-CONFIRMED {
+  border-left: 3px solid #90c49a;
+}
+.account-waiting .waiting-EXPIRED,
+.account-waiting .waiting-CANCELLED {
+  opacity: 0.8;
+}
+.daily-readiness {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #faf2e3;
+  border-radius: 10px;
+  color: #946222;
+  min-width: 165px;
+  max-width: 280px;
+}
+.daily-readiness strong {
+  display: block;
+  font-size: 12px;
+}
+.daily-readiness small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: inherit;
+  line-height: 1.6;
+}
+.daily-readiness.ready {
+  background: #e9f3e9;
+  color: #315b35;
+}
+.daily-readiness.cancelled {
+  background: #fff0eb;
+  color: #9b4739;
+}
+.daily-readiness.closed {
+  background: #eef0ec;
+  color: #667060;
+}
+.daily-capacity-track {
+  height: 4px;
+  margin-top: 9px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.daily-capacity-track i {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  border-radius: inherit;
+}
+.customer-table {
+  border-spacing: 0 8px;
+}
+.customer-table tbody td {
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+.daily-cancellation-note {
+  line-height: 1.7;
+  max-width: 280px;
+  border-radius: 10px;
+}
+@media (max-width: 640px) {
+  .account-waiting {
+    padding: 18px;
+  }
+  .account-waiting article {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-waiting article {
+    transition: none;
+  }
+  .account-waiting article:hover {
     transform: none;
   }
 }

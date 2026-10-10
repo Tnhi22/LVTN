@@ -1,8 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { buildGroups, groupKey } from '../services/customerPortalUtils.js'
-import CourtImage from '../components/CourtImage.vue'
-import { getCustomerData } from '../services/customerService.js'
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
+import { buildGroups, groupKey } from '../services/customerPortalUtils.js';
+import CourtImage from '../components/CourtImage.vue';
+import { getCustomerData } from '../services/customerService.js';
 
 const props = defineProps({
   auth: Object,
@@ -14,22 +22,24 @@ const props = defineProps({
   initialStart: String,
   initialEnd: String,
   initialCourt: String,
-})
+});
 const normalizeGroup = (value) =>
   ({ DAILYVISITOR: 'DAILY_VISITOR' })[
     String(value || '')
       .replace(/[^a-z0-9]/gi, '')
       .toUpperCase()
-  ] || String(value || '').toUpperCase()
-const group = ref(normalizeGroup(props.groupFilter))
-const room = ref(props.roomFilter || '')
-const catalogue = ref({ products: [], dailySchedules: [] })
-const dailySessions = ref([])
-const purchaseMode = ref(props.initialProduct ? 'TUBE' : 'NONE')
-const productId = ref(props.initialProduct ? Number(props.initialProduct) : null)
-const purchaseQuantity = ref(1)
-const acceptedRules = ref(false)
-const groups = computed(() => buildGroups(schedule.value?.courts || [], true))
+  ] || String(value || '').toUpperCase();
+const group = ref(normalizeGroup(props.groupFilter));
+const room = ref(props.roomFilter || '');
+const catalogue = ref({ products: [], dailySchedules: [] });
+const dailySessions = ref([]);
+const purchaseMode = ref(props.initialProduct ? 'TUBE' : 'NONE');
+const productId = ref(
+  props.initialProduct ? Number(props.initialProduct) : null,
+);
+const purchaseQuantity = ref(1);
+const acceptedRules = ref(false);
+const groups = computed(() => buildGroups(schedule.value?.courts || [], true));
 const filteredCourts = computed(() =>
   (schedule.value?.courts || []).filter(
     (c) =>
@@ -37,53 +47,57 @@ const filteredCourts = computed(() =>
       groupKey(c) !== 'DAILY_VISITOR' &&
       (!room.value || String(c.roomId) === room.value),
   ),
-)
+);
 const selectedProduct = computed(() =>
   catalogue.value.products.find((p) => p.id === productId.value),
-)
+);
 const productChoices = computed(() =>
-  catalogue.value.products.filter((p) => p.availableQuantityTubes > 0 && p.tubePrice > 0),
-)
+  catalogue.value.products.filter(
+    (p) => p.availableQuantityTubes > 0 && p.tubePrice > 0,
+  ),
+);
 const extraTotal = computed(() =>
   purchaseMode.value === 'TUBE'
     ? (selectedProduct.value?.tubePrice || 0) * purchaseQuantity.value
     : 0,
-)
-const purchaseLimit = computed(() => selectedProduct.value?.availableQuantityTubes || 0)
+);
+const purchaseLimit = computed(
+  () => selectedProduct.value?.availableQuantityTubes || 0,
+);
 const purchaseHint = computed(() => {
-  if (purchaseMode.value === 'NONE') return ''
+  if (purchaseMode.value === 'NONE') return '';
   if (selectedCourts.value.length !== 1)
-    return 'Mua cầu kèm booking cần chọn đúng một sân.'
-  if (purchaseMode.value !== 'TUBE') return 'Chỉ hỗ trợ mua cầu theo ống.'
-  if (!selectedProduct.value) return 'Vui lòng chọn loại cầu.'
+    return 'Mua cầu kèm booking cần chọn đúng một sân.';
+  if (purchaseMode.value !== 'TUBE') return 'Chỉ hỗ trợ mua cầu theo ống.';
+  if (!selectedProduct.value) return 'Vui lòng chọn loại cầu.';
   if (
     !Number.isInteger(purchaseQuantity.value) ||
     purchaseQuantity.value < 1 ||
     purchaseQuantity.value > purchaseLimit.value
   )
-    return 'Số lượng mua vượt mức có thể đặt hoặc không hợp lệ.'
-  return ''
-})
+    return 'Số lượng mua vượt mức có thể đặt hoặc không hợp lệ.';
+  return '';
+});
 const suggestions = computed(() => {
   if (
     !schedule.value ||
     group.value === 'DAILY_VISITOR' ||
     date.value > schedule.value.maxBookingDate
   )
-    return []
+    return [];
   const minutes = Math.max(60, duration.value || 60),
-    rows = []
+    rows = [];
   for (const c of filteredCourts.value) {
-    if (!c.active || !c.price) continue
+    if (!c.active || !c.price) continue;
     for (
       let begin = minute(c.price.openingTime);
       begin + minutes <= minute(c.price.closingTime);
       begin += 30
     ) {
       const toTime = (m) =>
-        `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+        `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       const start = instant(date.value, toTime(begin)),
-        end = instant(date.value, toTime(begin + minutes))
+        end = instant(date.value, toTime(begin + minutes));
       if (
         start <= clock.value ||
         c.busy.some(
@@ -92,198 +106,263 @@ const suggestions = computed(() => {
             end > new Date(`${b.start}+07:00`).getTime(),
         )
       )
-        continue
-      rows.push({ court: c, start: toTime(begin), end: toTime(begin + minutes) })
+        continue;
+      rows.push({
+        court: c,
+        start: toTime(begin),
+        end: toTime(begin + minutes),
+      });
     }
   }
   return rows
     .sort(
       (a, b) =>
-        a.start.localeCompare(b.start) || a.court.name.localeCompare(b.court.name),
+        a.start.localeCompare(b.start) ||
+        a.court.name.localeCompare(b.court.name),
     )
-    .slice(0, 6)
-})
+    .slice(0, 6);
+});
 async function chooseSuggestion(suggestion) {
-  startTime.value = suggestion.start
-  endTime.value = suggestion.end
-  await nextTick()
-  selectedIds.value = [suggestion.court.id]
+  startTime.value = suggestion.start;
+  endTime.value = suggestion.end;
+  await nextTick();
+  selectedIds.value = [suggestion.court.id];
 }
 function selectGroup(key) {
-  dailyLevel.value = ''
-  dailySlotsOpen.value = false
-  group.value = normalizeGroup(key)
-  room.value = ''
-  selectedIds.value = []
-  acceptedRules.value = false
+  dailyLevel.value = '';
+  dailySlotsOpen.value = false;
+  group.value = normalizeGroup(key);
+  room.value = '';
+  selectedIds.value = [];
+  acceptedRules.value = false;
 }
 async function loadCatalogue() {
   try {
-    catalogue.value = await request('/api/courts/catalogue')
+    catalogue.value = await request('/api/courts/catalogue');
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   }
 }
 async function loadDaily() {
-  const seq = ++dailyLoadSequence
-  dailyLoading.value = true
-  dailyError.value = ''
+  const seq = ++dailyLoadSequence;
+  dailyLoading.value = true;
+  dailyError.value = '';
   try {
     const data = await request(
       `/api/courts/daily-options?date=${encodeURIComponent(date.value)}`,
-    )
-    if (seq === dailyLoadSequence) dailySessions.value = data.sessions || []
+    );
+    if (seq === dailyLoadSequence) dailySessions.value = data.sessions || [];
   } catch (e) {
     if (seq === dailyLoadSequence) {
-      dailySessions.value = []
-      dailyError.value = e.message
+      dailySessions.value = [];
+      dailyError.value = e.message;
     }
   } finally {
-    if (seq === dailyLoadSequence) dailyLoading.value = false
+    if (seq === dailyLoadSequence) dailyLoading.value = false;
   }
 }
 async function registerDaily() {
-  if (saving.value || !acceptedRules.value) return
-  saving.value = true
-  error.value = ''
+  if (saving.value || !acceptedRules.value) return;
+  saving.value = true;
+  error.value = '';
   try {
     await request(
       `/api/daily-visitor-participants/register?sessionId=${dialog.value.session.id}`,
       { method: 'POST' },
-    )
-    dialog.value = null
-    navigate('my-bookings')
-    message.value = 'Đã đăng ký một lượt Daily Visitor.'
-    await Promise.allSettled([loadAccount(), loadDaily()])
+    );
+    dialog.value = null;
+    navigate('my-bookings');
+    message.value = 'Đã đăng ký một lượt Daily Visitor.';
+    await Promise.allSettled([loadAccount(), loadDaily()]);
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 watch(
   () => props.groupFilter,
   (value) => {
-    selectGroup(value || '')
+    selectGroup(value || '');
   },
-)
+);
 watch(
   () => props.roomFilter,
   (value) => {
-    room.value = value || ''
-    selectedIds.value = []
+    room.value = value || '';
+    selectedIds.value = [];
   },
-)
+);
 watch(
   () => props.initialProduct,
   (value) => {
-    productId.value = value ? Number(value) : null
-    purchaseMode.value = value ? 'TUBE' : 'NONE'
+    productId.value = value ? Number(value) : null;
+    purchaseMode.value = value ? 'TUBE' : 'NONE';
   },
-)
+);
 watch(
   () => props.initialDate,
   (value) => {
-    if (value) date.value = value
+    if (value) date.value = value;
   },
-)
+);
 watch(
   () => props.initialStart,
   (value) => {
-    if (value) startTime.value = value
+    if (value) startTime.value = value;
   },
-)
+);
 watch(
   () => props.initialEnd,
   (value) => {
-    if (value) endTime.value = value
+    if (value) endTime.value = value;
   },
-)
+);
 watch(
   () => props.initialCourt,
   () => loadSchedule(),
-)
+);
 watch([purchaseMode, productId, purchaseQuantity], () => {
-  acceptedRules.value = false
-})
+  acceptedRules.value = false;
+});
 
-const emit = defineEmits(['navigate', 'session-expired', 'profile-updated'])
+const emit = defineEmits(['navigate', 'session-expired', 'profile-updated']);
 const tabs = [
   { id: 'home', label: 'Trang chủ', icon: '01' },
   { id: 'booking', label: 'Đặt sân', icon: '02' },
   { id: 'my-bookings', label: 'Lịch đặt của tôi', icon: '03' },
   { id: 'history', label: 'Lịch sử đặt sân', icon: '04' },
   { id: 'profile', label: 'Hồ sơ cá nhân', icon: '05' },
-]
-const loggedIn = computed(() => props.auth?.user?.role === 'CUSTOMER')
-const currentTab = computed(() => (props.page === 'courts' ? 'booking' : props.page))
+];
+const loggedIn = computed(() => props.auth?.user?.role === 'CUSTOMER');
+const currentTab = computed(() =>
+  props.page === 'courts' ? 'booking' : props.page,
+);
 const title = computed(
   () => tabs.find((t) => t.id === currentTab.value)?.label || 'Trang chủ',
-)
+);
 const descriptions = {
   home: 'Một lịch chơi mới, một ngày nhiều năng lượng.',
   booking: 'Chọn ngày, giờ và sân phù hợp cho buổi chơi của bạn.',
   'my-bookings': 'Theo dõi lịch chơi sắp tới và các lượt đang nhận sân.',
   history: 'Xem lại những buổi chơi và trạng thái đặt sân của bạn.',
   profile: 'Quản lý thông tin và bảo mật tài khoản.',
-}
+};
 const vnDate = () =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
-const date = ref(props.initialDate || vnDate())
-const startTime = ref(props.initialStart || '18:00')
-const endTime = ref(props.initialEnd || '19:00')
-const schedule = ref(null)
-const selectedIds = ref([])
-const bookings = ref([])
-const profile = ref(null)
-const loadingSchedule = ref(false)
-const loadingAccount = ref(false)
-const scheduleError = ref('')
-const accountError = ref('')
-const message = ref('')
-const error = ref('')
-const saving = ref(false)
-const search = ref('')
-const statusFilter = ref('')
-const dialog = ref(null)
-const dialogElement = ref(null)
-const profileForm = reactive({ fullName: '' })
-const password = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
-const clock = ref(Date.now())
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+    new Date(),
+  );
+const date = ref(props.initialDate || vnDate());
+const startTime = ref(props.initialStart || '18:00');
+const endTime = ref(props.initialEnd || '19:00');
+const schedule = ref(null);
+const selectedIds = ref([]);
+const bookings = ref([]);
+const profile = ref(null);
+const loadingSchedule = ref(false);
+const loadingAccount = ref(false);
+const scheduleError = ref('');
+const accountError = ref('');
+const message = ref('');
+const error = ref('');
+const saving = ref(false);
+const search = ref('');
+const statusFilter = ref('');
+const dialog = ref(null);
+const dialogElement = ref(null);
+const profileForm = reactive({ fullName: '' });
+const password = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+});
+const clock = ref(Date.now());
 
 const halfHours = Array.from(
   { length: 48 },
-  (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`,
-)
-const bookingFormElement = ref(null)
-const bookingFormOpen = ref(false)
-const dailyLevel = ref('')
+  (_, i) =>
+    `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`,
+);
+const bookingFormElement = ref(null);
+const bookingFormOpen = ref(false);
+const dailyLevel = ref('');
 const searchHint = computed(() => {
-  if (!date.value || date.value < vnDate()) return 'Chọn ngày hôm nay hoặc ngày sắp tới.'
-  if (schedule.value?.maxBookingDate && date.value > schedule.value.maxBookingDate)
-    return 'Ngày đã chọn vượt hạn đặt sân của backend.'
+  if (!date.value || date.value < vnDate())
+    return 'Chọn ngày hôm nay hoặc ngày sắp tới.';
+  if (
+    schedule.value?.maxBookingDate &&
+    date.value > schedule.value.maxBookingDate
+  )
+    return 'Ngày đã chọn vượt hạn đặt sân của backend.';
   if (
     group.value !== 'DAILY_VISITOR' &&
     (duration.value < 60 || duration.value % 30 !== 0)
   )
-    return 'Giờ kết thúc phải sau giờ bắt đầu ít nhất 60 phút.'
-  return ''
-})
-const dailySlotsOpen = ref(false)
-const dailyError = ref('')
-const dailyLoading = ref(false)
-const waitlistStates = ref({})
-let dailyLoadSequence = 0
+    return 'Giờ kết thúc phải sau giờ bắt đầu ít nhất 60 phút.';
+  return '';
+});
+const dailySlotsOpen = ref(false);
+const dailyError = ref('');
+const dailyLoading = ref(false);
+const waitlistStates = ref({});
+const waitlistLoading = ref(false);
+const waitlistError = ref('');
+let waitlistSequence = 0;
+let waitingTimer;
+let waitingRefreshBusy = false;
+function offerRemaining(session) {
+  const value = waitlistStates.value[session.id]?.offerExpiresAt;
+  if (!value) return 0;
+  return (
+    Math.max(
+      0,
+      Math.ceil((new Date(`${value}+07:00`).getTime() - clock.value) / 1000),
+    ) || 0
+  );
+}
+function offerCountdown(session) {
+  const seconds = offerRemaining(session);
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function registeredDaily(session) {
+  return (
+    waitlistStates.value[session.id]?.status === 'CONFIRMED' ||
+    bookings.value.some(
+      (b) =>
+        b.daily &&
+        ['CONFIRMED', 'CHECKED_IN'].includes(b.status) &&
+        b.sessionStatus !== 'CANCELLED' &&
+        b.bookingDate === date.value &&
+        b.court?.name === session.schedule?.court?.name &&
+        time(b.startTime) === time(session.startTime) &&
+        time(b.endTime) === time(session.endTime),
+    )
+  );
+}
+function dailyClosedReason(session) {
+  if (session.status === 'CANCELLED') {
+    if (session.cancelReason === 'NOT_ENOUGH_REGISTERED_PLAYERS')
+      return 'Ca đã hủy vì không đủ người đăng ký.';
+    if (session.cancelReason === 'NOT_ENOUGH_CHECKED_IN_PLAYERS')
+      return 'Ca đã hủy vì không đủ người check-in.';
+    return 'Ca đã bị hủy.';
+  }
+  if (session.status === 'CLOSED') return 'Ca đã đóng.';
+  if (instant(date.value, session.startTime) <= clock.value)
+    return 'Ca đã bắt đầu, không còn đăng ký.';
+  return 'Ca không còn nhận đăng ký hoặc ngày chơi vượt hạn cho phép.';
+}
+let dailyLoadSequence = 0;
 const normalizeLevel = (value) =>
   String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/\s/g, '')
+    .replace(/\s/g, '');
 const matchingDailySessions = computed(() =>
   dailySessions.value.filter(
     (s) => normalizeLevel(s.schedule?.skillLevel) === dailyLevel.value,
   ),
-)
+);
 const dailyPrices = computed(() => [
   ...new Set(
     catalogue.value.dailySchedules
@@ -291,77 +370,152 @@ const dailyPrices = computed(() => [
       .map((s) => s.fixedFee)
       .filter((v) => v != null),
   ),
-])
+]);
 async function showDailySlots() {
-  dailySlotsOpen.value = true
-  await loadDaily()
-  if (loggedIn.value) await refreshWaitlists()
+  dailySlotsOpen.value = true;
+  await loadDaily();
+  if (loggedIn.value) await refreshWaitlists();
 }
 async function refreshWaitlists() {
+  const seq = ++waitlistSequence;
+  const token = props.auth?.accessToken;
+  const selectedDate = date.value;
+  if (!loggedIn.value) {
+    waitlistStates.value = {};
+    waitlistLoading.value = false;
+    return;
+  }
+  waitlistLoading.value = true;
+  waitlistError.value = '';
+  const sessions = [...matchingDailySessions.value];
   await Promise.allSettled(
-    matchingDailySessions.value.map(async (session) => {
+    sessions.map(async (session) => {
       try {
-        waitlistStates.value[session.id] = await request(
+        const result = await request(
           `/api/daily-visitor-waitlists/session/${session.id}/my`,
+        );
+        if (
+          seq === waitlistSequence &&
+          token === props.auth?.accessToken &&
+          selectedDate === date.value
         )
-      } catch {
-        /* Lỗi chính được hiển thị khi thao tác. */
+          waitlistStates.value[session.id] = result;
+      } catch (e) {
+        if (
+          seq !== waitlistSequence ||
+          token !== props.auth?.accessToken ||
+          selectedDate !== date.value
+        )
+          return;
+        if (e.status === 404) delete waitlistStates.value[session.id];
+        else
+          waitlistError.value =
+            e.message ||
+            'Chưa tải được trạng thái danh sách chờ. Vui lòng làm mới.';
       }
     }),
+  );
+  if (seq === waitlistSequence) waitlistLoading.value = false;
+}
+async function refreshDailyWaiting() {
+  if (
+    !dailySlotsOpen.value ||
+    saving.value ||
+    waitingRefreshBusy ||
+    document.hidden
   )
+    return;
+  waitingRefreshBusy = true;
+  try {
+    await refreshWaitlists();
+    await loadDaily();
+  } finally {
+    waitingRefreshBusy = false;
+  }
 }
 async function waitlistAction(session, action) {
   if (!loggedIn.value) {
-    navigate('login')
-    return
+    navigate('login');
+    return;
   }
-  if (saving.value) return
-  saving.value = true
-  error.value = ''
+  if (saving.value) return;
+  if (
+    action === 'confirm' &&
+    (offerRemaining(session) <= 0 || dailyUnavailable(session))
+  ) {
+    error.value =
+      'Lời mời đã hết hạn hoặc ca không còn khả dụng. Vui lòng làm mới.';
+    return;
+  }
+  if (
+    action === 'join' &&
+    (dailyUnavailable(session) ||
+      registeredDaily(session) ||
+      session.remainingSlots > 0 ||
+      ['WAITING', 'OFFERED'].includes(waitlistStates.value[session.id]?.status))
+  ) {
+    error.value =
+      'Ca này chưa phù hợp để tham gia danh sách chờ. Vui lòng làm mới.';
+    return;
+  }
+  saving.value = true;
+  error.value = '';
+  message.value = '';
   try {
     const result = await request(
       `/api/daily-visitor-waitlists/session/${session.id}/${action}`,
       { method: action === 'leave' ? 'DELETE' : 'POST' },
-    )
-    waitlistStates.value[session.id] = result
-    message.value = result.message || 'Đã cập nhật danh sách chờ.'
-    await loadDaily()
+    );
+    waitlistStates.value[session.id] = result;
+    message.value = result.message || 'Đã cập nhật danh sách chờ.';
+    await refreshWaitlists();
+    await loadDaily();
+    if (action === 'confirm') await loadAccount();
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
+    await refreshWaitlists();
+    await loadDaily();
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 function dailyUnavailable(session) {
-  if (date.value < vnDate()) return true
-  if (schedule.value?.maxBookingDate && date.value > schedule.value.maxBookingDate)
-    return true
+  if (date.value < vnDate()) return true;
+  if (
+    schedule.value?.maxBookingDate &&
+    date.value > schedule.value.maxBookingDate
+  )
+    return true;
   return (
     !['OPEN', 'FULL'].includes(session.status) ||
     instant(date.value, session.startTime) <= clock.value
-  )
+  );
 }
 watch(dailyLevel, () => {
-  dailySlotsOpen.value = false
-})
+  ++waitlistSequence;
+  waitlistLoading.value = false;
+  waitlistStates.value = {};
+  waitlistError.value = '';
+  dailySlotsOpen.value = false;
+});
 function groupBenefits(g) {
   const descriptions = [
     ...new Set(g.courts.map((c) => c.typeDescription?.trim()).filter(Boolean)),
-  ]
-  return descriptions.length ? descriptions.join(' · ') : g.description
+  ];
+  return descriptions.length ? descriptions.join(' · ') : g.description;
 }
 async function searchSchedule() {
-  if (searchHint.value) return
-  if (group.value !== 'DAILY_VISITOR') selectGroup('')
-  await Promise.allSettled([loadSchedule(), loadDaily()])
+  if (searchHint.value) return;
+  if (group.value !== 'DAILY_VISITOR') selectGroup('');
+  await Promise.allSettled([loadSchedule(), loadDaily()]);
 }
 async function openBookingForm(c) {
-  if (courtHint(c) || searchHint.value) return
-  selectedIds.value = [c.id]
-  acceptedRules.value = false
-  bookingFormOpen.value = true
-  await nextTick()
-  bookingFormElement.value?.showModal()
+  if (courtHint(c) || searchHint.value) return;
+  selectedIds.value = [c.id];
+  acceptedRules.value = false;
+  bookingFormOpen.value = true;
+  await nextTick();
+  bookingFormElement.value?.showModal();
 }
 function reviewBooking() {
   if (
@@ -370,19 +524,19 @@ function reviewBooking() {
     !selectedCourts.value.length ||
     selectedCourts.value.some((c) => courtHint(c))
   )
-    return
-  bookingFormElement.value?.close()
+    return;
+  bookingFormElement.value?.close();
   if (!loggedIn.value) {
-    navigate('login')
-    return
+    navigate('login');
+    return;
   }
-  openDialog({ mode: 'book' })
+  openDialog({ mode: 'book' });
 }
 
-let serverOffset = 0
-let timer
-let scheduleSequence = 0
-const controllers = new Set()
+let serverOffset = 0;
+let timer;
+let scheduleSequence = 0;
+const controllers = new Set();
 const statusLabels = {
   CONFIRMED: 'Đã đăng ký Daily Visitor',
   PENDING: 'Chờ nhận sân',
@@ -391,35 +545,41 @@ const statusLabels = {
   COMPLETED: 'Hoàn tất',
   CANCELLED: 'Đã hủy',
   NO_SHOW: 'Vắng mặt',
-}
+};
 const money = (value) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
     value || 0,
-  )
-const time = (value) => value?.slice(0, 5) || '—'
+  );
+const time = (value) => value?.slice(0, 5) || '—';
 const formatDate = (value) =>
   value
     ? new Date(`${value}T00:00:00+07:00`).toLocaleDateString('vi-VN', {
         timeZone: 'Asia/Ho_Chi_Minh',
       })
-    : '—'
-const minute = (value) => Number(value?.slice(0, 2)) * 60 + Number(value?.slice(3, 5))
-const instant = (day, hour) => new Date(`${day}T${time(hour)}:00+07:00`).getTime()
-const liveStatuses = ['PENDING', 'NO_SHOW_PENDING', 'CHECKED_IN', 'CONFIRMED']
+    : '—';
+const minute = (value) =>
+  Number(value?.slice(0, 2)) * 60 + Number(value?.slice(3, 5));
+const instant = (day, hour) =>
+  new Date(`${day}T${time(hour)}:00+07:00`).getTime();
+const liveStatuses = ['PENDING', 'NO_SHOW_PENDING', 'CHECKED_IN', 'CONFIRMED'];
 const upcoming = computed(() =>
   bookings.value
     .filter((b) => liveStatuses.includes(b.status))
     .sort(
-      (a, b) => instant(a.bookingDate, a.startTime) - instant(b.bookingDate, b.startTime),
+      (a, b) =>
+        instant(a.bookingDate, a.startTime) -
+        instant(b.bookingDate, b.startTime),
     ),
-)
+);
 const history = computed(() =>
   bookings.value
     .filter((b) => !liveStatuses.includes(b.status))
     .sort(
-      (a, b) => instant(b.bookingDate, b.startTime) - instant(a.bookingDate, a.startTime),
+      (a, b) =>
+        instant(b.bookingDate, b.startTime) -
+        instant(a.bookingDate, a.startTime),
     ),
-)
+);
 const visibleBookings = computed(() =>
   (currentTab.value === 'history' ? history.value : upcoming.value).filter(
     (b) =>
@@ -428,17 +588,23 @@ const visibleBookings = computed(() =>
         .toLowerCase()
         .includes(search.value.trim().toLowerCase()),
   ),
-)
+);
 const selectedCourts = computed(() =>
-  (schedule.value?.courts || []).filter((c) => selectedIds.value.includes(c.id)),
-)
-const duration = computed(() => minute(endTime.value) - minute(startTime.value))
+  (schedule.value?.courts || []).filter((c) =>
+    selectedIds.value.includes(c.id),
+  ),
+);
+const duration = computed(
+  () => minute(endTime.value) - minute(startTime.value),
+);
 const estimatedTotal = computed(
-  () => selectedCourts.value.reduce((sum, c) => sum + estimate(c), 0) + extraTotal.value,
-)
+  () =>
+    selectedCourts.value.reduce((sum, c) => sum + estimate(c), 0) +
+    extraTotal.value,
+);
 const fullName = computed(
   () => profile.value?.fullName || props.auth?.user?.fullName || 'Bạn',
-)
+);
 const initials = computed(() =>
   fullName.value
     .trim()
@@ -447,191 +613,199 @@ const initials = computed(() =>
     .map((s) => s[0])
     .join('')
     .toUpperCase(),
-)
+);
 const finishedCount = computed(
   () => history.value.filter((b) => b.status === 'COMPLETED').length,
-)
+);
 
 async function request(path, options = {}) {
-  const controller = new AbortController()
-  controllers.add(controller)
-  const timeout = window.setTimeout(() => controller.abort(), 15000)
+  const controller = new AbortController();
+  controllers.add(controller);
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
   try {
     return await getCustomerData(
       path,
       props.auth?.accessToken || '',
       controller.signal,
       options,
-    )
+    );
   } catch (e) {
-    if (e.status === 401) emit('session-expired')
+    if (e.status === 401) emit('session-expired');
     if (e.name === 'AbortError')
-      throw new Error('Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.')
-    throw e
+      throw new Error('Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.');
+    throw e;
   } finally {
-    window.clearTimeout(timeout)
-    controllers.delete(controller)
+    window.clearTimeout(timeout);
+    controllers.delete(controller);
   }
 }
 async function loadSchedule() {
-  const sequence = ++scheduleSequence
-  loadingSchedule.value = true
-  scheduleError.value = ''
-  const previousSelected = [...selectedIds.value]
-  if (!bookingFormOpen.value) selectedIds.value = []
-  schedule.value = null
+  const sequence = ++scheduleSequence;
+  loadingSchedule.value = true;
+  scheduleError.value = '';
+  const previousSelected = [...selectedIds.value];
+  if (!bookingFormOpen.value) selectedIds.value = [];
+  schedule.value = null;
   try {
     const data = await request(
       `/api/courts/schedule?date=${encodeURIComponent(date.value)}`,
-    )
+    );
     if (sequence === scheduleSequence) {
-      schedule.value = data
+      schedule.value = data;
       if (bookingFormOpen.value)
         selectedIds.value = previousSelected.filter((id) =>
           data.courts.some((c) => c.id === id),
-        )
+        );
       if (props.initialCourt) {
-        const court = data.courts.find((c) => String(c.id) === props.initialCourt)
-        if (court && !courtHint(court)) selectedIds.value = [court.id]
+        const court = data.courts.find(
+          (c) => String(c.id) === props.initialCourt,
+        );
+        if (court && !courtHint(court)) selectedIds.value = [court.id];
       }
-      const serverNow = new Date(`${data.serverTime}+07:00`).getTime()
+      const serverNow = new Date(`${data.serverTime}+07:00`).getTime();
       if (Number.isFinite(serverNow)) {
-        serverOffset = serverNow - Date.now()
-        clock.value = Date.now() + serverOffset
+        serverOffset = serverNow - Date.now();
+        clock.value = Date.now() + serverOffset;
       }
     }
   } catch (e) {
-    if (sequence === scheduleSequence) scheduleError.value = e.message
+    if (sequence === scheduleSequence) scheduleError.value = e.message;
   } finally {
-    if (sequence === scheduleSequence) loadingSchedule.value = false
+    if (sequence === scheduleSequence) loadingSchedule.value = false;
   }
 }
 async function loadAccount() {
-  if (!loggedIn.value) return
-  loadingAccount.value = true
-  accountError.value = ''
+  if (!loggedIn.value) return;
+  loadingAccount.value = true;
+  accountError.value = '';
   const results = await Promise.allSettled([
     request('/api/bookings/my'),
     request('/api/users/me'),
     request('/api/daily-visitor-participants/my'),
-  ])
+  ]);
   bookings.value = [
     ...(results[0].status === 'fulfilled' ? results[0].value : []),
     ...(results[2].status === 'fulfilled' ? results[2].value : []),
-  ]
+  ];
   if (results[1].status === 'fulfilled') {
-    profile.value = results[1].value
-    profileForm.fullName = profile.value.fullName || ''
+    profile.value = results[1].value;
+    profileForm.fullName = profile.value.fullName || '';
   }
   accountError.value = results
     .filter((r) => r.status === 'rejected')
     .map((r) => r.reason.message)
-    .join(' ')
-  loadingAccount.value = false
+    .join(' ');
+  loadingAccount.value = false;
 }
 function courtHint(c) {
-  if (date.value > schedule.value?.maxBookingDate) return 'Ngày chơi vượt hạn đặt sân'
-  if (!c.active) return 'Sân tạm ngừng hoạt động'
-  if (!c.price) return 'Chưa có bảng giá'
+  if (date.value > schedule.value?.maxBookingDate)
+    return 'Ngày chơi vượt hạn đặt sân';
+  if (!c.active) return 'Sân tạm ngừng hoạt động';
+  if (!c.price) return 'Chưa có bảng giá';
   if (duration.value < 60 || duration.value % 30 !== 0)
-    return 'Chọn thời lượng ít nhất 60 phút'
+    return 'Chọn thời lượng ít nhất 60 phút';
   if (
     minute(startTime.value) < minute(c.price.openingTime) ||
     minute(endTime.value) > minute(c.price.closingTime)
   )
-    return 'Ngoài giờ mở cửa'
-  const start = instant(date.value, startTime.value)
-  const end = instant(date.value, endTime.value)
-  if (start <= clock.value) return 'Giờ chơi đã qua'
+    return 'Ngoài giờ mở cửa';
+  const start = instant(date.value, startTime.value);
+  const end = instant(date.value, endTime.value);
+  if (start <= clock.value) return 'Giờ chơi đã qua';
   const busy = c.busy.find(
     (b) =>
       start < (b.end ? new Date(`${b.end}+07:00`).getTime() : Infinity) &&
       end > new Date(`${b.start}+07:00`).getTime(),
-  )
-  return busy?.reason || ''
+  );
+  return busy?.reason || '';
 }
 function estimate(c) {
-  if (!c.price || duration.value <= 0) return 0
+  if (!c.price || duration.value <= 0) return 0;
   const start = minute(startTime.value),
     end = minute(endTime.value),
-    peak = minute(c.price.peakStartTime)
+    peak = minute(c.price.peakStartTime);
   return (
     Math.floor(
-      (Math.max(0, Math.min(end, peak) - start) * c.price.normalPricePerHour) / 60,
+      (Math.max(0, Math.min(end, peak) - start) * c.price.normalPricePerHour) /
+        60,
     ) +
-    Math.floor((Math.max(0, end - Math.max(start, peak)) * c.price.peakPricePerHour) / 60)
-  )
+    Math.floor(
+      (Math.max(0, end - Math.max(start, peak)) * c.price.peakPricePerHour) /
+        60,
+    )
+  );
 }
 function toggleCourt(c) {
-  if (courtHint(c) || saving.value) return
+  if (courtHint(c) || saving.value) return;
   selectedIds.value = selectedIds.value.includes(c.id)
     ? selectedIds.value.filter((id) => id !== c.id)
-    : [...selectedIds.value, c.id]
+    : [...selectedIds.value, c.id];
 }
 function canCancel(b) {
   return (
     ['PENDING', 'NO_SHOW_PENDING', 'CONFIRMED'].includes(b.status) &&
     (!b.daily || !['CANCELLED', 'CLOSED'].includes(b.sessionStatus)) &&
     instant(b.bookingDate, b.startTime) - clock.value > 30 * 60000
-  )
+  );
 }
 function navigate(page) {
-  search.value = ''
-  statusFilter.value = ''
-  message.value = ''
-  error.value = ''
-  emit('navigate', page)
+  search.value = '';
+  statusFilter.value = '';
+  message.value = '';
+  error.value = '';
+  emit('navigate', page);
 }
 function openDialog(value) {
-  error.value = ''
-  acceptedRules.value = false
-  dialog.value = value
+  error.value = '';
+  acceptedRules.value = false;
+  dialog.value = value;
 }
 function closeDialog() {
-  if (!saving.value) dialog.value = null
+  if (!saving.value) dialog.value = null;
 }
 function dialogKeys(event) {
-  if (event.key === 'Escape') closeDialog()
-  if (event.key !== 'Tab') return
+  if (event.key === 'Escape') closeDialog();
+  if (event.key !== 'Tab') return;
   const nodes = [
     ...dialogElement.value.querySelectorAll(
       'button:not(:disabled), input, select, [tabindex="0"]',
     ),
-  ]
+  ];
   if (!nodes.length) {
-    event.preventDefault()
-    return
+    event.preventDefault();
+    return;
   }
   const first = nodes[0],
-    last = nodes[nodes.length - 1]
+    last = nodes[nodes.length - 1];
   if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
+    event.preventDefault();
+    last.focus();
   } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
+    event.preventDefault();
+    first.focus();
   }
 }
-let previousFocus
+let previousFocus;
 watch(dialog, async (value) => {
   if (value) {
-    previousFocus = document.activeElement
-    await nextTick()
-    dialogElement.value?.focus()
-  } else previousFocus?.focus()
-})
+    previousFocus = document.activeElement;
+    await nextTick();
+    dialogElement.value?.focus();
+  } else previousFocus?.focus();
+});
 async function submitBooking() {
-  if (saving.value || !selectedCourts.value.length || !acceptedRules.value) return
+  if (saving.value || !selectedCourts.value.length || !acceptedRules.value)
+    return;
   if (purchaseHint.value) {
-    error.value = purchaseHint.value
-    return
+    error.value = purchaseHint.value;
+    return;
   }
   if (selectedCourts.value.some((c) => courtHint(c))) {
-    error.value = 'Khung giờ đã thay đổi. Vui lòng chọn lại.'
-    return
+    error.value = 'Khung giờ đã thay đổi. Vui lòng chọn lại.';
+    return;
   }
-  saving.value = true
-  error.value = ''
+  saving.value = true;
+  error.value = '';
   try {
     const created = await request('/api/bookings', {
       method: 'POST',
@@ -641,124 +815,174 @@ async function submitBooking() {
         startTime: startTime.value,
         endTime: endTime.value,
         productId: purchaseMode.value === 'NONE' ? null : productId.value,
-        quantityTubes: purchaseMode.value === 'TUBE' ? purchaseQuantity.value : 0,
+        quantityTubes:
+          purchaseMode.value === 'TUBE' ? purchaseQuantity.value : 0,
         quantityPieces: 0,
       }),
-    })
-    dialog.value = null
-    navigate('my-bookings')
-    message.value = `Đặt sân thành công${Array.isArray(created) ? ` · ${created.length} booking` : ''}. Bạn có thể xem chi tiết bên dưới.`
-    await Promise.allSettled([loadAccount(), loadSchedule()])
+    });
+    dialog.value = null;
+    navigate('my-bookings');
+    message.value = `Đặt sân thành công${Array.isArray(created) ? ` · ${created.length} booking` : ''}. Bạn có thể xem chi tiết bên dưới.`;
+    await Promise.allSettled([loadAccount(), loadSchedule()]);
   } catch (e) {
-    error.value = e.message
-    await loadSchedule()
+    error.value = e.message;
+    await loadSchedule();
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function cancelBooking() {
-  const b = dialog.value?.booking
-  if (saving.value || !b || !canCancel(b)) return
-  saving.value = true
-  error.value = ''
+  const b = dialog.value?.booking;
+  if (saving.value || !b || !canCancel(b)) return;
+  saving.value = true;
+  error.value = '';
   try {
     await request(
       b.daily
         ? `/api/daily-visitor-participants/${b.id}/cancel`
         : `/api/bookings/${b.id}`,
       { method: 'DELETE' },
-    )
-    dialog.value = null
-    message.value = `Đã hủy booking #${b.id}.`
-    await Promise.allSettled([loadAccount(), loadSchedule()])
+    );
+    dialog.value = null;
+    message.value = `Đã hủy booking #${b.id}.`;
+    await Promise.allSettled([loadAccount(), loadSchedule()]);
   } catch (e) {
-    error.value = e.message
-    await loadAccount()
+    error.value = e.message;
+    await loadAccount();
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function saveProfile() {
-  if (saving.value) return
-  saving.value = true
-  error.value = ''
-  message.value = ''
+  if (saving.value) return;
+  saving.value = true;
+  error.value = '';
+  message.value = '';
   try {
     profile.value = await request('/api/users/me', {
       method: 'PATCH',
       body: JSON.stringify({ fullName: profileForm.fullName.trim() }),
-    })
-    emit('profile-updated', profile.value)
-    message.value = 'Đã cập nhật thông tin cá nhân.'
+    });
+    emit('profile-updated', profile.value);
+    message.value = 'Đã cập nhật thông tin cá nhân.';
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 async function changePassword() {
-  if (saving.value) return
-  error.value = ''
-  message.value = ''
+  if (saving.value) return;
+  error.value = '';
+  message.value = '';
   if (password.newPassword !== password.confirmPassword) {
-    error.value = 'Mật khẩu xác nhận không khớp.'
-    return
+    error.value = 'Mật khẩu xác nhận không khớp.';
+    return;
   }
-  saving.value = true
+  saving.value = true;
   try {
     await request('/api/auth/change-password', {
       method: 'POST',
       body: JSON.stringify(password),
-    })
+    });
     Object.assign(password, {
       currentPassword: '',
       newPassword: '',
       confirmPassword: '',
-    })
-    message.value = 'Đổi mật khẩu thành công.'
+    });
+    message.value = 'Đổi mật khẩu thành công.';
   } catch (e) {
-    error.value = e.message
+    error.value = e.message;
   } finally {
-    saving.value = false
+    saving.value = false;
   }
 }
 watch(date, () => {
-  loadSchedule()
-  loadDaily()
-  acceptedRules.value = false
-})
+  ++waitlistSequence;
+  waitlistStates.value = {};
+  waitlistError.value = '';
+  waitlistLoading.value = false;
+  dailySlotsOpen.value = false;
+  loadSchedule();
+  loadDaily();
+  acceptedRules.value = false;
+});
 watch([startTime, endTime], () => {
-  if (!bookingFormOpen.value) selectedIds.value = []
-  acceptedRules.value = false
-})
+  if (!bookingFormOpen.value) selectedIds.value = [];
+  acceptedRules.value = false;
+});
 watch(
   () => props.auth?.accessToken,
   () => {
-    bookings.value = []
-    profile.value = null
-    loadAccount()
-    loadSchedule()
+    ++waitlistSequence;
+    waitlistStates.value = {};
+    waitlistLoading.value = false;
+    waitlistError.value = '';
+    if (dailySlotsOpen.value) refreshWaitlists();
+    bookings.value = [];
+    profile.value = null;
+    loadAccount();
+    loadSchedule();
   },
-)
+);
 onMounted(() => {
-  loadSchedule()
-  loadAccount()
-  loadCatalogue()
-  loadDaily()
+  loadSchedule();
+  loadAccount();
+  loadCatalogue();
+  loadDaily();
   timer = window.setInterval(() => {
-    clock.value = Date.now() + serverOffset
-  }, 30000)
-})
+    clock.value = Date.now() + serverOffset;
+  }, 1000);
+  waitingTimer = window.setInterval(refreshDailyWaiting, 15000);
+});
 onUnmounted(() => {
-  window.clearInterval(timer)
-  controllers.forEach((c) => c.abort())
-})
+  ++waitlistSequence;
+  window.clearInterval(timer);
+  window.clearInterval(waitingTimer);
+  controllers.forEach((c) => c.abort());
+});
 </script>
 
 <template>
-  <div class="customer-shell">
+  <div
+    :class="['customer-shell', { 'booking-cinema': currentTab === 'booking' }]"
+  >
     <section class="customer-main">
-      <header v-if="currentTab !== 'home'" class="customer-heading">
+      <header v-if="currentTab === 'booking'" class="booking-hero">
+        <div class="booking-hero-orbit" aria-hidden="true"></div>
+        <div class="booking-hero-copy">
+          <p class="hero-kicker"><span></span> CARROT / FIND YOUR COURT</p>
+          <h1>Chọn lịch đẹp.<br /><em>Chơi hết mình.</em></h1>
+          <p>
+            Một buổi tập cùng đồng đội. Một trận đấu thật đã.<br />Tìm không
+            gian và khung giờ dành riêng cho bạn.
+          </p>
+          <a href="#booking-search" class="hero-booking-link"
+            >Bắt đầu tìm lịch <span aria-hidden="true">↓</span></a
+          >
+          <div class="hero-booking-meta">
+            <span>04 PHÂN KHÚC SÂN</span><span>01 ĐAM MÊ CHUNG</span>
+          </div>
+        </div>
+        <div class="booking-hero-art" aria-hidden="true">
+          <span class="hero-art-label">YOUR COURT.<br />YOUR GAME.</span>
+          <div class="hero-court-perspective">
+            <svg viewBox="0 0 240 340">
+              <rect x="15" y="15" width="210" height="310" />
+              <path
+                d="M35 15v310M205 15v310M15 170h210M15 105h210M15 235h210M120 15v90m0 130v90"
+              /></svg
+            ><span class="hero-net"></span>
+          </div>
+          <div class="hero-art-footer">
+            <span>CARROT BADMINTON</span><span>LET'S PLAY ↗</span>
+          </div>
+        </div>
+      </header>
+      <header
+        v-if="currentTab !== 'home' && currentTab !== 'booking'"
+        class="customer-heading"
+      >
         <div>
           <span class="customer-eyebrow">YOUR COURT · YOUR GAME</span>
           <h1>{{ title }}</h1>
@@ -768,7 +992,9 @@ onUnmounted(() => {
           loggedIn ? 'KHÁCH HÀNG' : 'KHÁCH THAM QUAN'
         }}</span>
       </header>
-      <div v-if="message" class="customer-alert success" role="status">{{ message }}</div>
+      <div v-if="message" class="customer-alert success" role="status">
+        {{ message }}
+      </div>
       <div v-if="error && !dialog" class="customer-alert danger" role="alert">
         {{ error }}
       </div>
@@ -777,12 +1003,33 @@ onUnmounted(() => {
         <button :disabled="loadingAccount" @click="loadAccount">Thử lại</button>
       </div>
       <template v-if="currentTab === 'booking'">
-        <section class="customer-card booking-search">
+        <div class="booking-steps" aria-label="Quy trình đặt sân">
+          <div>
+            <span>01</span><strong>Chọn ngày & giờ</strong
+            ><small>Chủ động lịch chơi</small>
+          </div>
+          <div>
+            <span>02</span><strong>Chọn loại sân</strong
+            ><small>Không gian phù hợp</small>
+          </div>
+          <div>
+            <span>03</span><strong>Chọn sân / ca</strong
+            ><small>Xem lựa chọn còn trống</small>
+          </div>
+          <div>
+            <span>04</span><strong>Xác nhận đặt lịch</strong
+            ><small>Sẵn sàng ra sân</small>
+          </div>
+        </div>
+        <section id="booking-search" class="customer-card booking-search">
           <div class="customer-section-title">
             <div>
               <span class="customer-eyebrow">TÌM LỊCH CHƠI</span>
               <h2>Ngày bạn muốn ra sân.</h2>
-              <p>Tìm theo ngày và giờ, sau đó chọn một trong bốn loại sân bên dưới.</p>
+              <p>
+                Tìm theo ngày và giờ, sau đó chọn một trong bốn loại sân bên
+                dưới.
+              </p>
             </div>
           </div>
           <form class="booking-search-fields" @submit.prevent="searchSchedule">
@@ -821,18 +1068,35 @@ onUnmounted(() => {
             {{ searchHint }}
           </p>
           <p v-if="schedule?.maxBookingDate" class="booking-window">
-            Được đặt đến {{ formatDate(schedule.maxBookingDate) }} theo cấu hình backend.
-            Sân thường tối thiểu 60 phút, giờ bắt đầu/kết thúc ở :00 hoặc :30.
+            Được đặt đến {{ formatDate(schedule.maxBookingDate) }} theo quy định
+            đặt sân. Sân thường tối thiểu 60 phút, giờ bắt đầu/kết thúc ở :00
+            hoặc :30.
           </p>
           <div class="quick-court-types">
             <button
               v-for="g in groups"
               :key="g.key"
               type="button"
-              :class="{ active: group === g.key }"
+              :class="[
+                { active: group === g.key },
+                'type-' + g.key.toLowerCase(),
+              ]"
               @click="selectGroup(g.key)"
             >
-              <strong>{{ g.name }}</strong
+              <span class="quick-type-top"
+                ><span class="quick-type-icon" aria-hidden="true">{{
+                  g.key === 'PREMIUM'
+                    ? '✦'
+                    : g.key === 'GOLD'
+                      ? '◈'
+                      : g.key === 'BASIC'
+                        ? '⚡'
+                        : '🏸'
+                }}</span
+                ><span class="quick-type-arrow" aria-hidden="true"
+                  >↗</span
+                ></span
+              ><strong>{{ g.name }}</strong
               ><small>{{
                 g.key === 'DAILY_VISITOR'
                   ? 'Xem ca giao lưu'
@@ -849,7 +1113,10 @@ onUnmounted(() => {
             v-for="(g, i) in groups"
             :key="g.key"
             class="court-collection"
-            :class="{ expanded: group === g.key }"
+            :class="[
+              { expanded: group === g.key },
+              'collection-' + g.key.toLowerCase(),
+            ]"
           >
             <button
               type="button"
@@ -859,18 +1126,25 @@ onUnmounted(() => {
             >
               <span class="collection-index">0{{ i + 1 }}</span
               ><span class="collection-title"
-                ><small>CARROT COURT COLLECTION</small><strong>{{ g.name }}</strong
+                ><small>{{
+                  g.key === 'DAILY_VISITOR'
+                    ? 'PLAY TOGETHER / GIAO LƯU'
+                    : 'CARROT COURT COLLECTION'
+                }}</small
+                ><strong>{{ g.name }}</strong
                 ><span>{{ groupBenefits(g) }}</span></span
               ><span v-if="g.key !== 'DAILY_VISITOR'" class="collection-count"
                 >{{ g.courts.length }} sân · {{ g.rooms.length }} phòng</span
-              ><span class="collection-arrow">{{ group === g.key ? '−' : '+' }}</span>
+              ><span class="collection-arrow">{{
+                group === g.key ? '−' : '+'
+              }}</span>
             </button>
             <div v-if="group === g.key" class="collection-content">
               <p class="collection-benefits">{{ groupBenefits(g) }}</p>
               <template v-if="g.key === 'DAILY_VISITOR'">
                 <p>
-                  Chọn ca theo trình độ và lịch backend. Cầu dùng chung theo cấu hình buổi
-                  chơi.
+                  Chọn ca theo trình độ và lịch backend. Cầu dùng chung theo cấu
+                  hình buổi chơi.
                 </p>
                 <p v-if="!dailyLevel" class="booking-window">
                   Chọn TBY, TB hoặc TB+ để xem các ca phù hợp.
@@ -890,21 +1164,24 @@ onUnmounted(() => {
                   <h3>Giao lưu trình độ {{ dailyLevel }}</h3>
                   <p v-if="dailyPrices.length">
                     Giá theo ca:
-                    <strong>{{ dailyPrices.map((v) => money(v)).join(' · ') }}</strong>
+                    <strong>{{
+                      dailyPrices.map((v) => money(v)).join(' · ')
+                    }}</strong>
                   </p>
                   <p v-else>Giá sẽ hiển thị theo cấu hình của từng ca.</p>
                   <ul>
                     <li>Chọn đúng trình độ để giao lưu cùng nhóm phù hợp.</li>
                     <li>
-                      Giờ bắt đầu và kết thúc cố định theo ca backend, không tự chọn giờ.
+                      Giờ bắt đầu và kết thúc cố định theo ca, không tự chọn
+                      giờ.
                     </li>
                     <li>
-                      Một tài khoản đăng ký một lượt. Cầu dùng chung theo cấu hình buổi
-                      chơi.
+                      Một tài khoản đăng ký một lượt. Cầu dùng chung theo cấu
+                      hình buổi chơi.
                     </li>
                     <li>
-                      Hủy theo nội quy backend. Khi ca đầy, có thể đăng ký chờ; chỉ có chỗ
-                      sau khi được mời và xác nhận.
+                      Hủy theo nội quy sân. Khi ca đầy, có thể đăng ký chờ; chỉ
+                      có chỗ sau khi được mời và xác nhận.
                     </li>
                   </ul>
                   <button
@@ -928,16 +1205,54 @@ onUnmounted(() => {
                     </button>
                   </header>
                   <p v-if="dailyLoading" role="status">Đang tải các ca…</p>
-                  <p v-if="dailyError" class="customer-alert danger" role="alert">
+                  <p
+                    v-if="dailyError"
+                    class="customer-alert danger"
+                    role="alert"
+                  >
                     {{ dailyError }}
                   </p>
+                  <div class="daily-waiting-guide">
+                    <span aria-hidden="true">🏸</span>
+                    <div>
+                      <strong>Ca đầy? Bạn vẫn có thể đăng ký chờ.</strong>
+                      <p>
+                        Khi có chỗ trống, hệ thống mời theo thứ tự đăng ký và
+                        báo ở chuông. Xác nhận đúng hạn để nhận slot; Waiting
+                        chưa phải là booking thành công.
+                      </p>
+                    </div>
+                    <button
+                      class="customer-button secondary"
+                      @click="navigate(loggedIn ? 'my-bookings' : 'login')"
+                    >
+                      Danh sách chờ của tôi →
+                    </button>
+                  </div>
+                  <p
+                    v-if="waitlistError"
+                    class="customer-alert danger"
+                    role="alert"
+                  >
+                    {{ waitlistError }}
+                  </p>
                   <div class="daily-session-grid">
-                    <article v-for="session in matchingDailySessions" :key="session.id">
+                    <article
+                      v-for="session in matchingDailySessions"
+                      :key="session.id"
+                      :class="{
+                        'waiting-card':
+                          waitlistStates[session.id]?.status === 'WAITING',
+                        'offered-card':
+                          waitlistStates[session.id]?.status === 'OFFERED' &&
+                          offerRemaining(session) > 0,
+                      }"
+                    >
                       <h3>{{ session.schedule?.court?.name }}</h3>
                       <span class="customer-tag">{{ dailyLevel }}</span>
                       <p>
-                        {{ time(session.startTime) }} – {{ time(session.endTime) }} · Giờ
-                        cố định
+                        {{ time(session.startTime) }} –
+                        {{ time(session.endTime) }} · Giờ cố định
                       </p>
                       <strong>{{
                         session.fixedFee != null
@@ -952,69 +1267,148 @@ onUnmounted(() => {
                         }}
                         · {{ session.status }}
                       </p>
-                      <template v-if="waitlistStates[session.id]?.status === 'OFFERED'"
-                        ><p>
-                          Bạn được mời nhận chỗ. Hạn xác nhận:
-                          {{
-                            waitlistStates[session.id].offerExpiresAt?.replace('T', ' ')
-                          }}
-                        </p>
+                      <p
+                        v-if="dailyUnavailable(session)"
+                        class="daily-state-note closed"
+                      >
+                        {{ dailyClosedReason(session) }}
+                      </p>
+                      <template
+                        v-else-if="
+                          waitlistStates[session.id]?.status === 'OFFERED'
+                        "
+                      >
+                        <div class="daily-state-note offered">
+                          <strong>✨ Đến lượt bạn nhận slot!</strong>
+                          <p>
+                            {{
+                              offerRemaining(session) > 0
+                                ? 'Còn ' +
+                                  offerCountdown(session) +
+                                  ' để xác nhận.'
+                                : 'Lời mời đã hết hạn. Hãy làm mới để xem trạng thái.'
+                            }}
+                          </p>
+                        </div>
                         <button
                           class="customer-button primary"
-                          :disabled="saving || dailyUnavailable(session)"
+                          :disabled="
+                            saving ||
+                            waitlistLoading ||
+                            offerRemaining(session) <= 0
+                          "
                           @click="waitlistAction(session, 'confirm')"
                         >
-                          Xác nhận nhận chỗ
-                        </button></template
-                      >
+                          Xác nhận nhận slot
+                        </button>
+                        <button
+                          class="customer-button secondary"
+                          :disabled="saving"
+                          @click="waitlistAction(session, 'leave')"
+                        >
+                          Từ chối nhận slot
+                        </button>
+                      </template>
                       <template
-                        v-else-if="waitlistStates[session.id]?.status === 'WAITING'"
-                        ><p>
-                          Đang chờ · Vị trí
-                          {{ waitlistStates[session.id].position || 'Đang cập nhật' }}
-                        </p>
+                        v-else-if="
+                          waitlistStates[session.id]?.status === 'WAITING'
+                        "
+                      >
+                        <div class="daily-state-note waiting">
+                          <strong
+                            >Đang chờ · vị trí #{{
+                              waitlistStates[session.id].position || '…'
+                            }}</strong
+                          >
+                          <p>
+                            Chỗ trống sẽ được ưu tiên theo hàng chờ. Bạn sẽ nhận
+                            thông báo khi đến lượt.
+                          </p>
+                        </div>
                         <button
                           class="customer-button secondary"
                           :disabled="saving"
                           @click="waitlistAction(session, 'leave')"
                         >
                           Rời danh sách chờ
-                        </button></template
-                      >
-                      <button
-                        v-else-if="
-                          session.status === 'OPEN' && session.remainingSlots > 0
-                        "
-                        class="customer-button primary"
-                        :disabled="saving || dailyUnavailable(session)"
-                        @click="
-                          loggedIn
-                            ? openDialog({ mode: 'daily', session })
-                            : navigate('login')
-                        "
-                      >
-                        {{ loggedIn ? 'Đăng ký ca này' : 'Đăng nhập để đăng ký' }}
-                      </button>
-                      <button
-                        v-else
-                        class="customer-button secondary"
-                        :disabled="saving || dailyUnavailable(session)"
-                        @click="waitlistAction(session, 'join')"
-                      >
-                        {{
-                          loggedIn
-                            ? 'Tham gia danh sách chờ'
-                            : 'Đăng nhập để vào danh sách chờ'
-                        }}
-                      </button>
+                        </button>
+                      </template>
+                      <template v-else-if="registeredDaily(session)">
+                        <p class="daily-state-note registered">
+                          ✓ Bạn đã đăng ký ca này.
+                        </p>
+                        <button
+                          class="customer-button secondary"
+                          @click="navigate('my-bookings')"
+                        >
+                          Xem lịch đặt của tôi →
+                        </button>
+                      </template>
+                      <template v-else>
+                        <p
+                          v-if="
+                            waitlistStates[session.id]?.status === 'EXPIRED'
+                          "
+                          class="daily-state-note closed"
+                        >
+                          Lời mời trước đã hết hạn. Quyền đăng ký lại được
+                          backend kiểm tra.
+                        </p>
+                        <button
+                          v-if="
+                            session.status === 'OPEN' &&
+                            session.remainingSlots > 0
+                          "
+                          class="customer-button primary"
+                          :disabled="
+                            saving ||
+                            dailyLoading ||
+                            waitlistLoading ||
+                            !!waitlistError
+                          "
+                          @click="
+                            loggedIn
+                              ? openDialog({ mode: 'daily', session })
+                              : navigate('login')
+                          "
+                        >
+                          {{
+                            loggedIn ? 'Đăng ký ca này' : 'Đăng nhập để đăng ký'
+                          }}
+                        </button>
+                        <button
+                          v-else
+                          class="customer-button secondary waiting-join"
+                          :disabled="
+                            saving ||
+                            dailyLoading ||
+                            waitlistLoading ||
+                            !!waitlistError
+                          "
+                          @click="waitlistAction(session, 'join')"
+                        >
+                          {{
+                            waitlistLoading
+                              ? 'Đang kiểm tra hàng chờ…'
+                              : loggedIn
+                                ? 'Tham gia danh sách chờ'
+                                : 'Đăng nhập để vào danh sách chờ'
+                          }}
+                        </button>
+                      </template>
                     </article>
                   </div>
                   <p
-                    v-if="!dailyLoading && !dailyError && !matchingDailySessions.length"
+                    v-if="
+                      !dailyLoading &&
+                      !dailyError &&
+                      !matchingDailySessions.length
+                    "
                     class="customer-empty"
                   >
-                    Chưa có ca {{ dailyLevel }} được mở cho ngày này. Lịch mẫu không phải
-                    ca đã mở; nhân viên cần tạo ca theo nghiệp vụ backend.
+                    Chưa có ca {{ dailyLevel }} được mở cho ngày này. Lịch mẫu
+                    không phải ca đã mở; nhân viên cần tạo ca theo nghiệp vụ
+                    backend.
                   </p>
                 </section>
               </template>
@@ -1031,22 +1425,32 @@ onUnmounted(() => {
                     <span>{{ r.courts.length }} sân</span>
                   </header>
                   <div class="booking-court-list">
-                    <article v-for="c in r.courts" :key="c.id" class="booking-court-item">
+                    <article
+                      v-for="c in r.courts"
+                      :key="c.id"
+                      class="booking-court-item"
+                    >
                       <div>
                         <span class="customer-tag">{{ c.typeName }}</span>
                         <h4>{{ c.name }}</h4>
                         <p>
-                          {{ c.typeDescription || 'Thông tin tiện nghi đang cập nhật.' }}
+                          {{
+                            c.typeDescription ||
+                            'Thông tin tiện nghi đang cập nhật.'
+                          }}
                         </p>
                         <small v-if="c.price"
-                          >Giờ thường {{ money(c.price.normalPricePerHour) }}/giờ · Cao
-                          điểm {{ money(c.price.peakPricePerHour) }}/giờ<br />Mở cửa
+                          >Giờ thường
+                          {{ money(c.price.normalPricePerHour) }}/giờ · Cao điểm
+                          {{ money(c.price.peakPricePerHour) }}/giờ<br />Mở cửa
                           {{ time(c.price.openingTime) }} –
                           {{ time(c.price.closingTime) }}</small
                         >
                       </div>
                       <div class="court-action">
-                        <strong>{{ c.price ? money(estimate(c)) : 'Chưa có giá' }}</strong
+                        <strong>{{
+                          c.price ? money(estimate(c)) : 'Chưa có giá'
+                        }}</strong
                         ><span :class="{ busy: !!courtHint(c) }">{{
                           courtHint(c) || 'Trống trong giờ đã chọn'
                         }}</span
@@ -1100,7 +1504,8 @@ onUnmounted(() => {
                 <span class="customer-eyebrow">ĐẶT SÂN CỦA BẠN</span>
                 <h2>{{ selectedCourts[0]?.name }}</h2>
                 <p>
-                  {{ selectedCourts[0]?.roomName }} · {{ selectedCourts[0]?.typeName }}
+                  {{ selectedCourts[0]?.roomName }} ·
+                  {{ selectedCourts[0]?.typeName }}
                 </p>
               </div>
               <button
@@ -1121,16 +1526,22 @@ onUnmounted(() => {
                   required /></label
               ><label
                 >Bắt đầu<select v-model="startTime">
-                  <option v-for="value in halfHours" :key="value">{{ value }}</option>
+                  <option v-for="value in halfHours" :key="value">
+                    {{ value }}
+                  </option>
                 </select></label
               ><label
                 >Kết thúc<select v-model="endTime">
-                  <option v-for="value in halfHours" :key="value">{{ value }}</option>
+                  <option v-for="value in halfHours" :key="value">
+                    {{ value }}
+                  </option>
                 </select></label
               >
             </div>
             <h3>Ống cầu cho buổi chơi</h3>
-            <p>Không bắt buộc. Chỉ mua theo ống, không bán lẻ trên trang đặt sân.</p>
+            <p>
+              Không bắt buộc. Chỉ mua theo ống, không bán lẻ trên trang đặt sân.
+            </p>
             <div class="customer-form-grid">
               <label
                 >Mua kèm<select v-model="purchaseMode">
@@ -1159,7 +1570,9 @@ onUnmounted(() => {
             </p>
             <p
               v-if="
-                purchaseHint || searchHint || selectedCourts.some((c) => courtHint(c))
+                purchaseHint ||
+                searchHint ||
+                selectedCourts.some((c) => courtHint(c))
               "
               class="customer-alert danger"
             >
@@ -1169,7 +1582,11 @@ onUnmounted(() => {
               <div>
                 <dt>Tiền sân</dt>
                 <dd>
-                  {{ money(selectedCourts.reduce((sum, c) => sum + estimate(c), 0)) }}
+                  {{
+                    money(
+                      selectedCourts.reduce((sum, c) => sum + estimate(c), 0),
+                    )
+                  }}
                 </dd>
               </div>
               <div>
@@ -1182,7 +1599,7 @@ onUnmounted(() => {
               </div>
             </dl>
             <p class="booking-window">
-              Giá và lịch được backend kiểm tra lại khi xác nhận. Cầu được giữ khi đặt
+              Giá và lịch được kiểm tra lại khi xác nhận. Cầu được giữ khi đặt
               thành công và xuất kho khi check-in.
             </p>
             <button
@@ -1197,7 +1614,11 @@ onUnmounted(() => {
                 selectedCourts.some((c) => courtHint(c))
               "
             >
-              {{ loggedIn ? 'Kiểm tra & xác nhận đặt sân' : 'Đăng nhập để đặt sân' }}
+              {{
+                loggedIn
+                  ? 'Kiểm tra & xác nhận đặt sân'
+                  : 'Đăng nhập để đặt sân'
+              }}
             </button>
           </form>
         </dialog>
@@ -1205,32 +1626,36 @@ onUnmounted(() => {
           <h2>Nội quy & chính sách.</h2>
           <ul>
             <li>
-              Đặt sân thuê tối thiểu 60 phút, giờ bắt đầu/kết thúc ở :00 hoặc :30; chỉ đặt
-              trong hạn backend cho phép.
+              Đặt sân thuê tối thiểu 60 phút, giờ bắt đầu/kết thúc ở :00 hoặc
+              :30; chỉ đặt trong thời hạn hệ thống cho phép.
             </li>
             <li>
-              Hủy booking chưa check-in khi còn hơn 30 phút trước giờ chơi. Booking tại
-              quầy do nhân viên xử lý theo nghiệp vụ riêng.
+              Hủy booking chưa check-in khi còn hơn 30 phút trước giờ chơi.
+              Booking tại quầy do nhân viên xử lý theo nghiệp vụ riêng.
             </li>
             <li>
-              Sau 15 phút chưa nhận sân, booking chuyển sang chờ xác nhận vắng; sau 30
-              phút ghi nhận NO_SHOW và nhả sân.
+              Sau 15 phút chưa nhận sân, booking chuyển sang chờ xác nhận vắng;
+              sau 30 phút ghi nhận NO_SHOW và nhả sân.
             </li>
             <li>
-              Vi phạm vắng mặt lần đầu: WARNING, không được đặt trong thời hạn 2 ngày. Vi
-              phạm tiếp theo: SUSPENDED, tài khoản bị khóa cho đến khi được xử lý theo
-              nghiệp vụ quản trị.
+              Vi phạm vắng mặt lần đầu: WARNING, không được đặt trong thời hạn 2
+              ngày. Vi phạm tiếp theo: SUSPENDED, tài khoản bị khóa cho đến khi
+              được xử lý theo nghiệp vụ quản trị.
             </li>
             <li>
-              Đặt kèm cầu chỉ giữ hàng. Staff/admin xác nhận check-in mới xuất kho; hủy
-              hoặc NO_SHOW trả phần hàng đã giữ.
+              Đặt kèm cầu chỉ giữ hàng. Staff/admin xác nhận check-in mới xuất
+              kho; hủy hoặc NO_SHOW trả phần hàng đã giữ.
             </li>
           </ul>
         </section>
       </template>
     </section>
     <Teleport to="body"
-      ><div v-if="dialog" class="customer-modal-overlay" @click.self="closeDialog">
+      ><div
+        v-if="dialog"
+        class="customer-modal-overlay"
+        @click.self="closeDialog"
+      >
         <section
           ref="dialogElement"
           class="customer-modal"
@@ -1261,15 +1686,21 @@ onUnmounted(() => {
               ×
             </button>
           </div>
-          <div v-if="error" class="customer-alert danger" role="alert">{{ error }}</div>
+          <div v-if="error" class="customer-alert danger" role="alert">
+            {{ error }}
+          </div>
           <template v-if="dialog.mode === 'daily'"
             ><p>
-              {{ dialog.session.schedule?.court?.name }} · {{ formatDate(date) }} ·
-              {{ time(dialog.session.startTime) }} – {{ time(dialog.session.endTime) }}
+              {{ dialog.session.schedule?.court?.name }} ·
+              {{ formatDate(date) }} · {{ time(dialog.session.startTime) }} –
+              {{ time(dialog.session.endTime) }}
             </p>
             <label class="rules-checkbox"
-              ><input v-model="acceptedRules" type="checkbox" :disabled="saving" />Tôi đã
-              đọc nội quy và điều kiện hủy trước hơn 30 phút.</label
+              ><input
+                v-model="acceptedRules"
+                type="checkbox"
+                :disabled="saving"
+              />Tôi đã đọc nội quy và điều kiện hủy trước hơn 30 phút.</label
             >
             <div class="customer-modal-actions">
               <button
@@ -1291,19 +1722,23 @@ onUnmounted(() => {
             ><p>{{ selectedCourts.map((c) => c.name).join(', ') }}</p>
             <p>{{ formatDate(date) }} · {{ startTime }} – {{ endTime }}</p>
             <div class="customer-total">
-              <span>Tổng dự kiến</span><strong>{{ money(estimatedTotal) }}</strong>
+              <span>Tổng dự kiến</span
+              ><strong>{{ money(estimatedTotal) }}</strong>
             </div>
             <p>
-              Mỗi sân sẽ tạo một booking riêng. Bạn có thể hủy từng booking khi còn hơn 30
-              phút trước giờ chơi.
+              Mỗi sân sẽ tạo một booking riêng. Bạn có thể hủy từng booking khi
+              còn hơn 30 phút trước giờ chơi.
             </p>
             <p v-if="purchaseMode !== 'NONE'">
               {{ selectedProduct?.name }} · {{ purchaseQuantity }} ống ·
               {{ money(extraTotal) }}
             </p>
             <label class="rules-checkbox"
-              ><input v-model="acceptedRules" type="checkbox" :disabled="saving" />Tôi đã
-              đọc nội quy và điều kiện hủy sân.</label
+              ><input
+                v-model="acceptedRules"
+                type="checkbox"
+                :disabled="saving"
+              />Tôi đã đọc nội quy và điều kiện hủy sân.</label
             >
             <div class="customer-modal-actions">
               <button
@@ -1315,7 +1750,10 @@ onUnmounted(() => {
               ><button
                 class="customer-button primary"
                 :disabled="
-                  saving || !selectedCourts.length || !acceptedRules || !!purchaseHint
+                  saving ||
+                  !selectedCourts.length ||
+                  !acceptedRules ||
+                  !!purchaseHint
                 "
                 @click="submitBooking"
               >
@@ -1367,8 +1805,8 @@ onUnmounted(() => {
             </dl>
             <template v-if="dialog.mode === 'cancel'"
               ><p>
-                Sau khi hủy, sân sẽ được mở cho người khác đặt. Bạn cần tạo booking mới
-                nếu muốn chơi lại.
+                Sau khi hủy, sân sẽ được mở cho người khác đặt. Bạn cần tạo
+                booking mới nếu muốn chơi lại.
               </p>
               <div class="customer-modal-actions">
                 <button
@@ -1387,7 +1825,8 @@ onUnmounted(() => {
               </div></template
             >
             <div v-else class="customer-modal-actions">
-              <button class="customer-button secondary" @click="closeDialog">Đóng</button
+              <button class="customer-button secondary" @click="closeDialog">
+                Đóng</button
               ><button
                 v-if="canCancel(dialog.booking)"
                 class="customer-button cancel"
@@ -2229,7 +2668,12 @@ onUnmounted(() => {
     object-position: 60% 25%;
   }
   .customer-hero::before {
-    background: linear-gradient(0deg, #131c18 3%, #131c18df 35%, #131c1840 100%);
+    background: linear-gradient(
+      0deg,
+      #131c18 3%,
+      #131c18df 35%,
+      #131c1840 100%
+    );
   }
   .customer-hero-content {
     padding: 30px 26px;
@@ -2817,5 +3261,988 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+}
+
+.daily-waiting-guide {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 1px solid #ddd0ec;
+  border-radius: 15px;
+  background: linear-gradient(120deg, #f3edfb, #fff8eb);
+}
+.daily-waiting-guide > span {
+  font-size: 27px;
+}
+.daily-waiting-guide > div {
+  flex: 1;
+}
+.daily-waiting-guide strong {
+  color: #553774;
+  font-size: 14px;
+}
+.daily-waiting-guide p {
+  margin: 7px 0 0;
+  color: #7c6e85;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.booking-cinema .daily-session-grid > article.waiting-card {
+  border-color: #cbb4df;
+  background: #fcf9ff;
+}
+.booking-cinema .daily-session-grid > article.offered-card {
+  border: 2px solid #e2a65e;
+  background: #fffaf0;
+  box-shadow: 0 10px 28px #c77d2220;
+}
+.daily-state-note {
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.daily-state-note p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.daily-state-note.waiting {
+  background: #f0e8f9;
+  color: #654287;
+}
+.daily-state-note.offered {
+  background: #fff0d7;
+  color: #9b5d19;
+}
+.daily-state-note.registered {
+  background: #edf3e7;
+  color: #476232;
+}
+.daily-state-note.closed {
+  background: #f2eeea;
+  color: #796a60;
+}
+.daily-session-grid article > button {
+  margin-top: 7px;
+}
+@media (max-width: 700px) {
+  .daily-waiting-guide {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .daily-waiting-guide > div {
+    min-width: 180px;
+  }
+  .daily-waiting-guide > button {
+    width: 100%;
+  }
+}
+</style>
+
+<style scoped>
+.booking-cinema {
+  --booking-ink: #30261d;
+  --booking-muted: #8a7968;
+  --booking-accent: #c58d4b;
+}
+.booking-cinema .customer-main {
+  width: 100%;
+  min-width: 0;
+}
+.booking-hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 28px;
+  overflow: hidden;
+  padding: 52px 48px 34px;
+  border-radius: 26px;
+  background: linear-gradient(120deg, #211e19, #34271d);
+  color: #fff8ed;
+  margin-bottom: 22px;
+}
+.booking-hero-orbit {
+  position: absolute;
+  z-index: -1;
+  width: 540px;
+  height: 540px;
+  border: 1px solid #b6814033;
+  border-radius: 50%;
+  right: -130px;
+  top: -200px;
+  box-shadow:
+    0 0 0 90px #d99b4e08,
+    0 0 0 180px #d99b4e04;
+}
+.hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #c5a37b;
+  font-weight: 800;
+  margin: 0 0 22px;
+}
+.hero-kicker > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #eb9e4e;
+  box-shadow: 0 0 15px #efa444;
+}
+.booking-hero-copy h1 {
+  font-size: clamp(34px, 4.3vw, 60px);
+  letter-spacing: -2px;
+  margin: 0;
+  line-height: 1.15;
+  font-weight: 850;
+}
+.booking-hero-copy h1 em {
+  color: #efb778;
+  font-style: normal;
+}
+.booking-hero-copy > p:not(.hero-kicker) {
+  color: #bcae9f;
+  font-size: 13px;
+  line-height: 1.9;
+  margin: 23px 0;
+}
+.hero-booking-link {
+  display: inline-flex;
+  gap: 28px;
+  align-items: center;
+  padding: 14px 20px;
+  min-height: 47px;
+  border-radius: 10px;
+  background: #eda65b;
+  color: #291b0e;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+}
+.hero-booking-link:hover {
+  background: #ffc17c;
+  transform: translateY(-3px);
+}
+.hero-booking-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 30px;
+  font-size: 8px;
+  color: #ad9173;
+  letter-spacing: 1.4px;
+}
+.booking-hero-art {
+  position: relative;
+  min-height: 295px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-left: 20px;
+}
+.hero-art-label {
+  display: block;
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 850;
+  letter-spacing: 2px;
+  color: #d1ad7d;
+}
+.hero-court-perspective {
+  position: absolute;
+  width: 200px;
+  height: 280px;
+  left: 50%;
+  top: 24px;
+  transform: translateX(-45%) perspective(800px) rotateX(45deg) rotateZ(-24deg);
+  animation: booking-court-float 8s ease-in-out infinite;
+}
+.hero-court-perspective svg {
+  width: 100%;
+  height: 100%;
+  fill: #bc85471a;
+  stroke: #c59b63;
+  stroke-width: 1.6;
+  filter: drop-shadow(12px 22px 4px #0003);
+}
+.hero-net {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 50%;
+  height: 2px;
+  background: #ffe4b2;
+  box-shadow: 0 0 20px #efad5b70;
+}
+.hero-art-footer {
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #a68e70;
+}
+.booking-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px 4px 28px;
+}
+.booking-steps > div {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 4px 12px;
+  align-items: center;
+}
+.booking-steps > div > span {
+  grid-row: span 2;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e7d5bd;
+  background: #faf4e9;
+  color: #aa7b44;
+  font-size: 10px;
+  font-weight: 850;
+  border-radius: 50%;
+}
+.booking-steps strong {
+  font-size: 12px;
+  color: #66513d;
+}
+.booking-steps small {
+  font-size: 10px;
+  color: #aa9681;
+}
+.booking-cinema .booking-search {
+  border: 1px solid #e7dccb;
+  padding: 30px;
+  border-radius: 20px;
+  background: #fffdf9;
+  box-shadow: 0 12px 40px #6c4b2306;
+  scroll-margin-top: 160px;
+}
+.booking-cinema .customer-eyebrow {
+  color: #ae7c42;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+}
+.booking-cinema .customer-section-title h2 {
+  color: #3e3024;
+  font-size: 28px;
+  letter-spacing: -0.8px;
+  margin: 10px 0;
+}
+.booking-cinema .customer-section-title p {
+  color: #9c8670;
+  font-size: 12px;
+}
+.booking-cinema .booking-search-fields {
+  gap: 16px;
+  align-items: end;
+  margin-top: 26px;
+}
+.booking-cinema .booking-search-fields label {
+  color: #846c54;
+  font-size: 11px;
+  font-weight: 700;
+}
+.booking-cinema .booking-search-fields input,
+.booking-cinema .booking-search-fields select {
+  height: 49px;
+  border: 1px solid #e7dccb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #5c4734;
+  background: white;
+  font-size: 14px;
+}
+.booking-cinema .booking-search-fields .primary {
+  min-height: 49px;
+}
+.booking-cinema .customer-button {
+  border-radius: 10px;
+  min-height: 42px;
+  transition:
+    transform 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
+  font-size: 11px;
+}
+.booking-cinema .customer-button.primary {
+  background: #34271b;
+  color: #fff4e5;
+  border-color: #34271b;
+}
+.booking-cinema .customer-button.primary:hover:not(:disabled) {
+  background: #7a5329;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px #68462215;
+}
+.booking-cinema .customer-button.secondary {
+  background: #fff9f0;
+  border-color: #e8d7be;
+  color: #927044;
+}
+.booking-cinema .customer-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.booking-cinema .booking-window {
+  font-size: 11px;
+  color: #a58c72;
+  padding: 12px 0;
+  line-height: 1.8;
+}
+.booking-cinema .quick-court-types {
+  gap: 12px;
+  margin-top: 20px;
+}
+.booking-cinema .quick-court-types button {
+  --type-accent: #b1844c;
+  --type-light: #faf3e8;
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid #e8dece;
+  border-radius: 15px;
+  background: white;
+  color: #59452e;
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.booking-cinema .quick-court-types .type-gold {
+  --type-accent: #a07933;
+  --type-light: #fcf7e4;
+}
+.booking-cinema .quick-court-types .type-basic {
+  --type-accent: #718a69;
+  --type-light: #f0f5ec;
+}
+.booking-cinema .quick-court-types .type-daily_visitor {
+  --type-accent: #8b76a4;
+  --type-light: #f5eff9;
+}
+.quick-type-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.quick-type-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: var(--type-light);
+  color: var(--type-accent);
+  border-radius: 9px;
+  font-size: 18px;
+}
+.quick-type-arrow {
+  color: #b5a089;
+  font-size: 18px;
+}
+.booking-cinema .quick-court-types strong {
+  font-size: 19px;
+  letter-spacing: -0.4px;
+}
+.booking-cinema .quick-court-types small {
+  color: #a18b74;
+  font-size: 10px;
+}
+.booking-cinema .quick-court-types button:hover {
+  transform: translateY(-4px);
+  border-color: var(--type-accent);
+  box-shadow: 0 12px 25px #5f432b0a;
+}
+.booking-cinema .quick-court-types button.active {
+  border-color: var(--type-accent);
+  background: var(--type-light);
+  color: var(--type-accent);
+  box-shadow: inset 0 0 0 1px var(--type-accent);
+}
+.booking-cinema .court-collections {
+  gap: 18px;
+  margin: 28px 0;
+}
+.booking-cinema .court-collection {
+  --collection-accent: #b4864b;
+  --collection-tint: #faf3e8;
+  border: 1px solid #e8dfd1;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 6px 28px #3f2b1604;
+}
+.booking-cinema .collection-gold {
+  --collection-accent: #a58039;
+  --collection-tint: #fcf7e7;
+}
+.booking-cinema .collection-basic {
+  --collection-accent: #788c6b;
+  --collection-tint: #f2f6ed;
+}
+.booking-cinema .collection-daily_visitor {
+  --collection-accent: #8976a3;
+  --collection-tint: #f6f1f9;
+}
+.booking-cinema .collection-trigger {
+  padding: 28px 30px;
+  gap: 24px;
+  color: #453324;
+  background: linear-gradient(110deg, var(--collection-tint), white);
+  min-height: 145px;
+}
+.booking-cinema .collection-trigger:hover {
+  background: var(--collection-tint);
+}
+.booking-cinema .expanded .collection-trigger {
+  background: linear-gradient(110deg, #30271f, #403227);
+  color: #fff3df;
+}
+.booking-cinema .collection-index {
+  font-size: 38px;
+  font-weight: 850;
+  opacity: 1;
+  color: var(--collection-accent);
+  letter-spacing: -2px;
+}
+.booking-cinema .collection-title {
+  gap: 8px;
+}
+.booking-cinema .collection-title strong {
+  font-size: clamp(24px, 2.9vw, 34px);
+  letter-spacing: -0.9px;
+}
+.booking-cinema .collection-title small {
+  font-size: 8px;
+  letter-spacing: 2px;
+  opacity: 0.7;
+}
+.booking-cinema .collection-title > span {
+  max-width: 650px;
+  font-size: 11px;
+  line-height: 1.8;
+  opacity: 0.75;
+}
+.booking-cinema .collection-count {
+  font-size: 10px;
+  border: 1px solid #b79a712e;
+  border-radius: 24px;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+.booking-cinema .collection-arrow {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #b79a7133;
+  border-radius: 50%;
+  color: var(--collection-accent);
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.booking-cinema .collection-content {
+  padding: 28px;
+}
+.booking-cinema .collection-benefits {
+  background: var(--collection-tint);
+  border-left: 3px solid var(--collection-accent);
+  padding: 14px 18px;
+  border-radius: 0 10px 10px 0;
+  color: #8e785f;
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 0 0 24px;
+}
+.booking-cinema .booking-room {
+  padding: 22px;
+  border-color: #e9e0d4;
+  border-radius: 16px;
+  background: #fffcf8;
+}
+.booking-cinema .booking-room header {
+  border-bottom: 1px solid #eee5d8;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+}
+.booking-cinema .booking-room header small {
+  color: #ad8c62;
+  letter-spacing: 1.5px;
+  font-size: 9px;
+}
+.booking-cinema .booking-room h3 {
+  color: #5b412a;
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+.booking-cinema .booking-room header > span {
+  color: #9a7b57;
+  font-size: 10px;
+  background: #f5ebdd;
+  padding: 8px 11px;
+  border-radius: 24px;
+}
+.booking-cinema .booking-court-item {
+  position: relative;
+  border: 1px solid #e8e0d3;
+  background: #fff;
+  border-radius: 14px;
+  padding: 23px;
+  gap: 22px;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.booking-cinema .booking-court-item:hover {
+  border-color: #c9ac80;
+  box-shadow: 0 7px 20px #6e4b2108;
+}
+.booking-cinema .customer-tag {
+  color: #ad8250;
+  background: #faf1e3;
+  border: 1px solid #eee0c8;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 8px;
+  letter-spacing: 0.8px;
+}
+.booking-cinema .booking-court-item h4 {
+  font-size: 29px;
+  color: #3e2b1c;
+  margin: 14px 0 10px;
+  letter-spacing: -1px;
+}
+.booking-cinema .booking-court-item p {
+  max-width: 580px;
+  margin: 10px 0;
+  color: #a18970;
+  font-size: 11px;
+  line-height: 1.85;
+}
+.booking-cinema .booking-court-item small {
+  color: #977c5b;
+  font-size: 10px;
+}
+.booking-cinema .court-action {
+  padding-left: 24px;
+  border-left: 1px solid #eee3d1;
+  min-width: 190px;
+  justify-content: center;
+}
+.booking-cinema .court-action strong {
+  font-size: 26px;
+  color: #a6793f;
+  letter-spacing: -0.7px;
+}
+.booking-cinema .court-action span {
+  font-size: 10px;
+  color: #7f986f;
+}
+.booking-cinema .court-action span.busy {
+  color: #b1866b;
+  max-width: 220px;
+  line-height: 1.6;
+  text-align: right;
+}
+.booking-cinema .court-action .customer-button {
+  width: 100%;
+}
+.booking-cinema .booking-court-item details {
+  grid-column: 1 / -1;
+  border-top: 1px dashed #e6d9c5;
+  padding-top: 12px;
+  font-size: 10px;
+  color: #aa8962;
+}
+.booking-cinema .booking-suggestions {
+  border: 1px dashed #decbaa;
+  border-radius: 12px;
+  padding: 18px;
+  background: #fffcf6;
+  color: #8f6b3e;
+  margin-top: 20px;
+}
+.booking-cinema .daily-level-tabs {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.booking-cinema .daily-level-tabs button {
+  padding: 22px;
+  border: 1px solid #e3d7ee;
+  border-radius: 14px;
+  background: #fbf8ff;
+  color: #9680ac;
+  font-size: 22px;
+  font-weight: 850;
+}
+.booking-cinema .daily-level-tabs button.active {
+  background: #5f4b75;
+  border-color: #5f4b75;
+  color: white;
+  box-shadow: 0 8px 20px #715a8c15;
+}
+.booking-cinema .daily-level-info {
+  background: #faf7fd;
+  border-color: #e9dfef;
+  border-radius: 15px;
+  padding: 24px;
+}
+.booking-cinema .daily-level-info h3 {
+  color: #725888;
+  font-size: 23px;
+  letter-spacing: -0.5px;
+}
+.booking-cinema .daily-level-info p,
+.booking-cinema .daily-level-info li {
+  color: #94839e;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.booking-cinema .daily-session-grid > article {
+  border: 1px solid #e5dcef;
+  border-radius: 15px;
+  background: #fff;
+  padding: 23px;
+  box-shadow: 0 6px 20px #6d4b8105;
+}
+.booking-cinema .daily-session-grid h3 {
+  color: #735986;
+}
+.booking-cinema .daily-slot-panel {
+  border-radius: 16px;
+  background: #fcfaff;
+  border-color: #e6dcee;
+  padding: 24px;
+}
+.booking-cinema .booking-form-dialog {
+  border: 1px solid #e5d5be;
+  border-radius: 22px;
+  padding: 30px;
+  box-shadow: 0 30px 100px #32210f33;
+  background: #fffdf8;
+}
+.booking-cinema .booking-form-dialog::backdrop {
+  background: #21180f77;
+  backdrop-filter: blur(6px);
+}
+.booking-cinema .booking-form-title {
+  border-bottom: 1px solid #eadfcf;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+}
+.booking-cinema .booking-form-title h2 {
+  font-size: 32px;
+  color: #6a4829;
+  letter-spacing: -1px;
+}
+.booking-cinema .booking-form-title p {
+  color: #a68b6b;
+  font-size: 12px;
+}
+.booking-cinema .booking-form-dialog h3 {
+  color: #8e6c43;
+  font-size: 17px;
+}
+.booking-cinema .booking-form-dialog p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #9b8267;
+}
+.booking-cinema .booking-form-dialog label {
+  color: #987d5e;
+  font-size: 11px;
+}
+.booking-cinema .booking-form-dialog input,
+.booking-cinema .booking-form-dialog select {
+  background: white;
+  border-color: #e8dac5;
+  border-radius: 10px;
+  min-height: 46px;
+  color: #634a31;
+}
+.booking-cinema .booking-form-total {
+  padding: 20px;
+  background: #f7efdf;
+  border-radius: 14px;
+  color: #8f6b3c;
+}
+.booking-cinema .booking-form-total div:last-child {
+  border-top: 1px solid #e2cba8;
+}
+.booking-cinema .booking-form-total div:last-child dd {
+  color: #76511f;
+  font-size: 27px;
+  font-weight: 850;
+}
+.booking-cinema .booking-form-dialog form > .customer-button {
+  width: 100%;
+  min-height: 48px;
+}
+.booking-cinema .booking-policies {
+  border: 1px solid #e6dccd;
+  background: #fbf7f0;
+  border-radius: 18px;
+  padding: 28px;
+}
+.booking-cinema .booking-policies h2 {
+  color: #775535;
+  font-size: 22px;
+  letter-spacing: -0.5px;
+}
+.booking-cinema .booking-policies li {
+  color: #9d856b;
+  font-size: 11px;
+  line-height: 1.9;
+  margin-bottom: 12px;
+}
+.booking-cinema .customer-empty {
+  background: #faf6ee;
+  color: #aa9278;
+  border-radius: 12px;
+}
+@keyframes booking-court-float {
+  0%,
+  100% {
+    transform: translateX(-45%) perspective(800px) rotateX(45deg)
+      rotateZ(-24deg);
+  }
+  50% {
+    transform: translateX(-45%) perspective(800px) rotateX(45deg)
+      rotateZ(-24deg) translateY(-10px);
+  }
+}
+@media (max-width: 1000px) {
+  .booking-hero {
+    padding: 38px 30px;
+  }
+  .booking-cinema .booking-court-item {
+    grid-template-columns: 1fr auto;
+  }
+  .booking-cinema .court-action {
+    min-width: 165px;
+  }
+  .booking-steps {
+    gap: 10px;
+  }
+  .booking-steps strong {
+    font-size: 11px;
+  }
+}
+@media (max-width: 760px) {
+  .booking-hero {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 34px 26px;
+  }
+  .booking-hero-art {
+    min-height: 210px;
+    padding-left: 0;
+  }
+  .hero-art-label {
+    font-size: 16px;
+  }
+  .hero-court-perspective {
+    width: 140px;
+    height: 200px;
+    top: 0;
+  }
+  .booking-hero-copy h1 {
+    letter-spacing: -1.5px;
+  }
+  .booking-steps {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: 20px;
+    padding: 16px 0 24px;
+  }
+  .booking-cinema .booking-search {
+    padding: 23px;
+  }
+  .booking-cinema .booking-search-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .booking-cinema .booking-search-fields > label:first-child {
+    grid-column: 1 / -1;
+  }
+  .booking-cinema .booking-search-fields > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .booking-cinema .quick-court-types {
+    grid-template-columns: 1fr 1fr;
+  }
+  .booking-cinema .collection-trigger {
+    padding: 24px 20px;
+    gap: 14px;
+  }
+  .booking-cinema .collection-index {
+    font-size: 28px;
+  }
+  .booking-cinema .collection-count {
+    display: none;
+  }
+  .booking-cinema .collection-content {
+    padding: 20px;
+  }
+  .booking-cinema .booking-room {
+    padding: 18px;
+  }
+  .booking-cinema .booking-court-item {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+  .booking-cinema .court-action {
+    border-left: 0;
+    border-top: 1px solid #eee3d1;
+    padding: 18px 0 0;
+    align-items: start;
+  }
+  .booking-cinema .court-action span.busy {
+    text-align: left;
+    max-width: 100%;
+  }
+  .booking-cinema .court-action .customer-button {
+    width: 100%;
+  }
+  .booking-cinema .booking-form-dialog {
+    padding: 24px;
+  }
+  .booking-cinema .daily-slot-panel {
+    padding: 18px;
+  }
+}
+@media (max-width: 420px) {
+  .booking-cinema .booking-search {
+    padding: 20px 16px;
+  }
+  .booking-cinema .quick-court-types button {
+    padding: 15px;
+  }
+  .booking-cinema .quick-court-types strong {
+    font-size: 16px;
+  }
+  .booking-cinema .collection-title strong {
+    font-size: 23px;
+  }
+  .booking-cinema .collection-title > span {
+    font-size: 10px;
+  }
+  .booking-cinema .collection-index {
+    display: none;
+  }
+  .booking-cinema .collection-content {
+    padding: 16px;
+  }
+  .booking-cinema .daily-level-tabs button {
+    padding: 16px;
+    font-size: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-court-perspective {
+    animation: none;
+  }
+  .booking-cinema .customer-button,
+  .booking-cinema .quick-court-types button,
+  .hero-booking-link,
+  .booking-cinema .booking-court-item {
+    transition: none;
+  }
+  .booking-cinema .customer-button:hover,
+  .booking-cinema .quick-court-types button:hover,
+  .hero-booking-link:hover {
+    transform: none;
+  }
+}
+
+.daily-waiting-guide {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 1px solid #ddd0ec;
+  border-radius: 15px;
+  background: linear-gradient(120deg, #f3edfb, #fff8eb);
+}
+.daily-waiting-guide > span {
+  font-size: 27px;
+}
+.daily-waiting-guide > div {
+  flex: 1;
+}
+.daily-waiting-guide strong {
+  color: #553774;
+  font-size: 14px;
+}
+.daily-waiting-guide p {
+  margin: 7px 0 0;
+  color: #7c6e85;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.booking-cinema .daily-session-grid > article.waiting-card {
+  border-color: #cbb4df;
+  background: #fcf9ff;
+}
+.booking-cinema .daily-session-grid > article.offered-card {
+  border: 2px solid #e2a65e;
+  background: #fffaf0;
+  box-shadow: 0 10px 28px #c77d2220;
+}
+.daily-state-note {
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.daily-state-note p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.daily-state-note.waiting {
+  background: #f0e8f9;
+  color: #654287;
+}
+.daily-state-note.offered {
+  background: #fff0d7;
+  color: #9b5d19;
+}
+.daily-state-note.registered {
+  background: #edf3e7;
+  color: #476232;
+}
+.daily-state-note.closed {
+  background: #f2eeea;
+  color: #796a60;
+}
+.daily-session-grid article > button {
+  margin-top: 7px;
+}
+@media (max-width: 700px) {
+  .daily-waiting-guide {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .daily-waiting-guide > div {
+    min-width: 180px;
+  }
+  .daily-waiting-guide > button {
+    width: 100%;
+  }
 }
 </style>

@@ -21,6 +21,7 @@ import {
 const props = defineProps({
   auth: { type: Object, required: true },
   initialRange: { type: Object, default: null },
+  refreshKey: { type: Number, default: 0 },
 });
 
 const emit = defineEmits(['session-expired']);
@@ -69,11 +70,28 @@ const confirmation = ref(null),
   received = ref('');
 
 const salesRefresh = ref(0);
+watch(
+  () => props.refreshKey,
+  () => {
+    salesRefresh.value++;
+    load();
+  },
+);
 watch(success, () => {
   salesRefresh.value++;
 });
 const work = ref(null);
-defineExpose({ createWalkIn: () => workOn('create') });
+defineExpose({ createWalkIn: () => workOn('create'), openBookingById });
+async function openBookingById(id, action = '') {
+  await load();
+  const booking = rows.value.find((row) => row.id === Number(id));
+  if (!booking) {
+    error.value = 'Không tải được booking #' + id;
+    return;
+  }
+  await openDetail(booking);
+  if (action && !reason(booking, action)) ask(booking, action);
+}
 function workOn(kind, booking = null) {
   if (saving.value) return;
   work.value = { kind, booking };
@@ -276,7 +294,16 @@ const dateTime = (d) =>
       )
     : '—';
 
-const reason = (b, a) => actionReason(b, a, now.value);
+const reason = (b, a) => {
+  if (a !== 'cancel') return actionReason(b, a, now.value);
+  if (!b?.visitor)
+    return 'Chỉ Staff/Admin hủy booking khách tại quầy bằng thao tác này.';
+  if (b.status !== 'PENDING') return 'Chỉ hủy booking tại quầy chưa check-in.';
+  const start = bookingTime(b);
+  if (!Number.isFinite(start) || start - now.value <= 30 * 60000)
+    return 'Không được hủy trong 30 phút trước giờ chơi hoặc sau khi bắt đầu.';
+  return '';
+};
 
 watch(
   filters,
@@ -700,7 +727,7 @@ watch(calendarDate, loadCalendar);
     <header class="hero">
       <div class="hero-copy">
         <span class="eyebrow">CARROT / LỊCH ĐẶT SÂN</span>
-        <h2>Mỗi lượt sân,<br />một trải nghiệm trọn vẹn.</h2>
+        <h2>Quản lý lịch sân.<br />Nhận sân và thu tiền.</h2>
         <p>Nhận sân nhanh. Theo dõi trận đấu. Thu tiền rõ ràng.</p>
         <div class="hero-meta">
           <span class="live-dot"></span>{{ date(todayDate) }} · {{ clock }}
@@ -725,12 +752,11 @@ watch(calendarDate, loadCalendar);
     </header>
 
     <div class="counter-toolbar">
-      <button @click="workOn('daily')">🏸 Daily tại quầy</button>
       <button class="primary" @click="workOn('create')">
-        ＋ Đặt sân tại quầy</button
-      ><button @click="workOn('sale')">Bán ống cầu riêng</button
-      ><button @click="workOn('history')">Hóa đơn bán cầu</button
-      ><span>Tìm mã sân P1-01 / P1-02 bên dưới để xử lý đúng lịch.</span>
+        ＋ Booking tại quầy</button
+      ><button @click="workOn('daily')">🏸 Daily tại quầy</button
+      ><button @click="workOn('sale')">Bán cầu riêng · ống / lẻ</button
+      ><button @click="workOn('history')">Hóa đơn bán cầu</button>
     </div>
     <BookingCounterActions
       :auth="auth"
@@ -742,6 +768,11 @@ watch(calendarDate, loadCalendar);
     <p v-if="error" class="message error" role="alert">{{ error }}</p>
     <p v-if="success" class="message success" role="status">✓ {{ success }}</p>
 
+    <ShuttleSalesReport
+      :auth="auth"
+      :refresh-key="salesRefresh"
+      @session-expired="emit('session-expired')"
+    />
     <DailyBookingsPanel
       :auth="auth"
       :refresh-key="salesRefresh"
@@ -983,11 +1014,23 @@ watch(calendarDate, loadCalendar);
       </div>
     </section>
 
-    <ShuttleSalesReport
-      :auth="auth"
-      :refresh-key="salesRefresh"
-      @session-expired="emit('session-expired')"
-    />
+    <div class="staff-source-tabs" role="group" aria-label="Loại booking">
+      <button :class="{ active: !filters.source }" @click="filters.source = ''">
+        Tất cả booking
+      </button>
+      <button
+        :class="{ active: filters.source === 'online' }"
+        @click="filters.source = 'online'"
+      >
+        Booking có tài khoản
+      </button>
+      <button
+        :class="{ active: filters.source === 'walk-in' }"
+        @click="filters.source = 'walk-in'"
+      >
+        Booking khách tại quầy
+      </button>
+    </div>
     <section class="list-panel">
       <div class="section-heading list-heading">
         <div>
@@ -1163,6 +1206,15 @@ watch(calendarDate, loadCalendar);
                     @click="openDetail(b)"
                   >
                     Chi tiết ↗
+                  </button>
+                  <button
+                    v-if="b.visitor"
+                    class="danger text-button"
+                    :disabled="saving || loading || !!reason(b, 'cancel')"
+                    :title="reason(b, 'cancel') || 'Hủy booking tại quầy'"
+                    @click="ask(b, 'cancel')"
+                  >
+                    Hủy booking
                   </button>
                 </div>
               </td>
@@ -2753,6 +2805,29 @@ tbody tr:hover {
   .confirm-footer > button:last-child {
     font-size: 11px;
   }
+}
+</style>
+
+<style scoped>
+.staff-source-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0;
+}
+.staff-source-tabs button {
+  border: 1px solid #e4ddd4;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: white;
+  color: #655549;
+  font-weight: 700;
+  cursor: pointer;
+}
+.staff-source-tabs button.active {
+  background: #312821;
+  border-color: #312821;
+  color: #fff4e5;
 }
 </style>
 
